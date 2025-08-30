@@ -1,0 +1,93 @@
+{
+  "name": "debugops-mcp",
+  "displayName": "DebugOpsMCP",
+  "description": "MCP server for debugging automation in VS Code",
+  "version": "0.1.0",
+  "publisher": "debugops",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "debug",
+    "mcp",
+    "automation",
+    "copilot"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "debugops-mcp.start",
+        "title": "Start DebugOpsMCP Server",
+        "category": "DebugOpsMCP"
+      },
+      {
+        "command": "debugops-mcp.stop",
+        "title": "Stop DebugOpsMCP Server",
+        "category": "DebugOpsMCP"
+      },
+      {
+        "command": "debugops-mcp.status",
+        "title": "Show DebugOpsMCP Status",
+        "category": "DebugOpsMCP"
+      }
+    ],
+    "configuration": {
+      "title": "DebugOpsMCP",
+      "properties": {
+        "debugops-mcp.serverPath": {
+          "type": "string",
+          "description": "Path to the DebugOpsMCP server executable",
+          "default": ""
+        },
+        "debugops-mcp.logLevel": {
+          "type": "string",
+          "enum": [
+            "Trace",
+            "Debug",
+            "Information",
+            "Warning",
+            "Error",
+            "Critical"
+          ],
+          "default": "Information",
+          "description": "Log level for the DebugOpsMCP server"
+        },
+        "debugops-mcp.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start the DebugOpsMCP server when VS Code opens"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.11",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "@vscode/test-cli": "^0.0.4",
+    "@vscode/test-electron": "^2.3.8",
+    "eslint": "^8.54.0",
+    "typescript": "^5.9.2",
+    "vscode": "^1.1.37"
+  },
+  "dependencies": {
+    "child_process": "^1.0.2"
+  }
+}

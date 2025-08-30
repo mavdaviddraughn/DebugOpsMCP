@@ -1,0 +1,148 @@
+name: DebugOpsMCP CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '18.x'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    
+    - name: Restore .NET dependencies
+      run: dotnet restore core/DebugOpsMCP.sln
+    
+    - name: Build .NET solution
+      run: dotnet build core/DebugOpsMCP.sln --configuration Release --no-restore
+    
+    - name: Run .NET unit tests
+      run: dotnet test core/tests/DebugOpsMCP.Core.Tests/DebugOpsMCP.Core.Tests.csproj --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
+    
+    - name: Run .NET integration tests  
+      run: dotnet test core/tests/DebugOpsMCP.Integration.Tests/DebugOpsMCP.Integration.Tests.csproj --configuration Release --no-build --verbosity normal
+    
+    - name: Install VS Code extension dependencies
+      run: npm ci
+      working-directory: vscode-extension
+    
+    - name: Lint VS Code extension
+      run: npm run lint
+      working-directory: vscode-extension
+    
+    - name: Build VS Code extension
+      run: npm run compile
+      working-directory: vscode-extension
+    
+    - name: Test VS Code extension
+      run: npm run test
+      working-directory: vscode-extension
+    
+    - name: Check architectural boundaries
+      run: |
+        # Verify that Contracts project has no dependencies other than System.Text.Json
+        echo "Checking Contracts project dependencies..."
+        if dotnet list core/src/DebugOpsMCP.Contracts package | grep -v "System.Text.Json" | grep -q "PackageReference"; then
+          echo "❌ Contracts project has unauthorized dependencies"
+          exit 1
+        fi
+        echo "✅ Contracts dependencies are valid"
+        
+        # Verify Core project doesn't reference Host
+        echo "Checking Core project references..."
+        if dotnet list core/src/DebugOpsMCP.Core reference | grep -q "Host"; then
+          echo "❌ Core project illegally references Host"
+          exit 1
+        fi
+        echo "✅ Core project references are valid"
+        
+        # Check for circular references
+        echo "Checking for circular references..."
+        dotnet build core/DebugOpsMCP.sln --verbosity quiet
+        if [ $? -ne 0 ]; then
+          echo "❌ Build failed - possible circular references"
+          exit 1
+        fi
+        echo "✅ No circular references detected"
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: true
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Restore dependencies
+      run: dotnet restore core/DebugOpsMCP.sln
+    
+    - name: Security scan
+      run: |
+        dotnet list core/DebugOpsMCP.sln package --vulnerable --include-transitive
+        if [ $? -ne 0 ]; then
+          echo "❌ Vulnerable packages detected"
+          exit 1
+        fi
+        echo "✅ No vulnerable packages found"
+
+  package:
+    needs: [build-and-test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    
+    - name: Build release
+      run: |
+        dotnet publish core/src/DebugOpsMCP.Host/DebugOpsMCP.Host.csproj -c Release -o publish/server
+        
+    - name: Package VS Code extension
+      run: |
+        npm ci
+        npm run compile
+        npx vsce package
+      working-directory: vscode-extension
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: debugops-mcp-release
+        path: |
+          publish/
+          vscode-extension/*.vsix

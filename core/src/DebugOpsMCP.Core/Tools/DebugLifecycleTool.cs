@@ -171,10 +171,10 @@ public class DebugLifecycleTool : IDebugLifecycleTool
             // TODO: Implement actual DAP disconnect request
             await Task.Delay(100); // Simulate disconnect time
 
-            return new McpResponse
+            return new McpResponse<string>
             {
                 Success = true,
-                Message = "Debug session disconnected"
+                Result = "Debug session disconnected"
             };
         }
         catch (Exception ex)
@@ -200,10 +200,10 @@ public class DebugLifecycleTool : IDebugLifecycleTool
             // TODO: Implement actual DAP terminate request
             await Task.Delay(100); // Simulate terminate time
 
-            return new McpResponse
+            return new McpResponse<string>
             {
                 Success = true,
-                Message = "Debug session terminated"
+                Result = "Debug session terminated"
             };
         }
         catch (Exception ex)

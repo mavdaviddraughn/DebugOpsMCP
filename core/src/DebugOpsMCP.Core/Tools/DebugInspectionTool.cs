@@ -39,7 +39,7 @@ public class DebugInspectionTool : IDebugInspectionTool
         };
     }
 
-    private async Task<McpResponse> HandleGetStackTraceAsync(DebugGetStackTraceRequest request)
+    private Task<McpResponse> HandleGetStackTraceAsync(DebugGetStackTraceRequest request)
     {
         try
         {
@@ -113,7 +113,7 @@ public class DebugInspectionTool : IDebugInspectionTool
         }
     }
 
-    private async Task<McpResponse> HandleGetVariablesAsync(DebugGetVariablesRequest request)
+    private Task<McpResponse> HandleGetVariablesAsync(DebugGetVariablesRequest request)
     {
         try
         {
@@ -181,7 +181,7 @@ public class DebugInspectionTool : IDebugInspectionTool
         }
     }
 
-    private async Task<McpResponse> HandleEvaluateAsync(DebugEvaluateRequest request)
+    private Task<McpResponse> HandleEvaluateAsync(DebugEvaluateRequest request)
     {
         try
         {

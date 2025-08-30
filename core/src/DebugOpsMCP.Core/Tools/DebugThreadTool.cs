@@ -38,7 +38,7 @@ public class DebugThreadTool : IDebugThreadTool
         };
     }
 
-    private async Task<McpResponse> HandleGetThreadsAsync(DebugGetThreadsRequest request)
+    private Task<McpResponse> HandleGetThreadsAsync(DebugGetThreadsRequest request)
     {
         try
         {
@@ -102,7 +102,7 @@ public class DebugThreadTool : IDebugThreadTool
         }
     }
 
-    private async Task<McpResponse> HandleSelectThreadAsync(DebugSelectThreadRequest request)
+    private Task<McpResponse> HandleSelectThreadAsync(DebugSelectThreadRequest request)
     {
         try
         {
@@ -125,11 +125,11 @@ public class DebugThreadTool : IDebugThreadTool
 
             _logger.LogInformation("Thread {ThreadId} selected successfully", request.ThreadId);
 
-            return new McpResponse
+            return Task.FromResult<McpResponse>(new McpResponse<string>
             {
                 Success = true,
-                Message = $"Thread {request.ThreadId} selected"
-            };
+                Result = $"Thread {request.ThreadId} selected"
+            });
         }
         catch (Exception ex)
         {
@@ -178,7 +178,7 @@ public class DebugStatusTool : IDebugStatusTool
         };
     }
 
-    private async Task<McpResponse> HandleGetStatusAsync(DebugGetStatusRequest request)
+    private Task<McpResponse> HandleGetStatusAsync(DebugGetStatusRequest request)
     {
         try
         {

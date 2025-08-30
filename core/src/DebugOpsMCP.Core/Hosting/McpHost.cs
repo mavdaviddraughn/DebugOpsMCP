@@ -66,7 +66,7 @@ public class McpHost
         return method switch
         {
             "health" => await ProcessHealthRequestAsync(),
-            
+
             // Debug lifecycle
             "debug.attach" => await ProcessDebugRequestAsync<Contracts.Debug.DebugAttachRequest>(requestJson),
             "debug.launch" => await ProcessDebugRequestAsync<Contracts.Debug.DebugLaunchRequest>(requestJson),
@@ -91,13 +91,13 @@ public class McpHost
             "debug.selectThread" => await ProcessDebugRequestAsync<Contracts.Debug.DebugSelectThreadRequest>(requestJson),
             "debug.getStatus" => await ProcessDebugRequestAsync<Contracts.Debug.DebugGetStatusRequest>(requestJson),
 
-            _ => new McpErrorResponse 
-            { 
-                Error = new McpError 
-                { 
-                    Code = "METHOD_NOT_FOUND", 
-                    Message = $"Unknown method: {method}" 
-                } 
+            _ => new McpErrorResponse
+            {
+                Error = new McpError
+                {
+                    Code = "METHOD_NOT_FOUND",
+                    Message = $"Unknown method: {method}"
+                }
             }
         };
     }
@@ -105,10 +105,10 @@ public class McpHost
     private async Task<McpResponse> ProcessHealthRequestAsync()
     {
         _logger.LogInformation("Health check requested");
-        return await Task.FromResult(new McpResponse<string> 
-        { 
-            Success = true, 
-            Result = "DebugOpsMCP server is running" 
+        return await Task.FromResult(new McpResponse<string>
+        {
+            Success = true,
+            Result = "DebugOpsMCP server is running"
         });
     }
 
@@ -214,17 +214,17 @@ public class McpHost
     {
         return method switch
         {
-            "debug.attach" or "debug.launch" or "debug.disconnect" or "debug.terminate" => 
+            "debug.attach" or "debug.launch" or "debug.disconnect" or "debug.terminate" =>
                 _serviceProvider.GetService<IDebugLifecycleTool>(),
-            "debug.continue" or "debug.pause" or "debug.step" => 
+            "debug.continue" or "debug.pause" or "debug.step" =>
                 _serviceProvider.GetService<IDebugExecutionTool>(),
-            "debug.setBreakpoint" or "debug.removeBreakpoint" or "debug.listBreakpoints" => 
+            "debug.setBreakpoint" or "debug.removeBreakpoint" or "debug.listBreakpoints" =>
                 _serviceProvider.GetService<IDebugBreakpointTool>(),
-            "debug.getStackTrace" or "debug.getVariables" or "debug.evaluate" => 
+            "debug.getStackTrace" or "debug.getVariables" or "debug.evaluate" =>
                 _serviceProvider.GetService<IDebugInspectionTool>(),
-            "debug.getThreads" or "debug.selectThread" => 
+            "debug.getThreads" or "debug.selectThread" =>
                 _serviceProvider.GetService<IDebugThreadTool>(),
-            "debug.getStatus" => 
+            "debug.getStatus" =>
                 _serviceProvider.GetService<IDebugStatusTool>(),
             _ => null
         };

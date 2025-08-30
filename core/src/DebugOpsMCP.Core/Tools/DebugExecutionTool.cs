@@ -62,10 +62,10 @@ public class DebugExecutionTool : IDebugExecutionTool
 
             _logger.LogInformation("Execution continued successfully");
 
-            return new McpResponse
+            return new McpResponse<string>
             {
                 Success = true,
-                Message = "Execution continued"
+                Result = "Execution continued"
             };
         }
         catch (Exception ex)
@@ -105,10 +105,10 @@ public class DebugExecutionTool : IDebugExecutionTool
 
             _logger.LogInformation("Execution paused successfully");
 
-            return new McpResponse
+            return new McpResponse<string>
             {
                 Success = true,
-                Message = "Execution paused"
+                Result = "Execution paused"
             };
         }
         catch (Exception ex)
@@ -162,10 +162,10 @@ public class DebugExecutionTool : IDebugExecutionTool
 
             _logger.LogInformation("Step {StepType} completed successfully", request.StepType);
 
-            return new McpResponse
+            return new McpResponse<string>
             {
                 Success = true,
-                Message = $"Step {request.StepType} completed"
+                Result = $"Step {request.StepType} completed"
             };
         }
         catch (Exception ex)

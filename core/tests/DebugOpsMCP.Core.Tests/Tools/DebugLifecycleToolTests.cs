@@ -24,7 +24,7 @@ public class DebugLifecycleToolTests
     public async Task HandleAttachAsync_WhenBridgeNotConnected_InitializesBridge()
     {
         // Arrange
-        var request = new DebugAttachRequest { ProcessId = 1234 };
+        var request = new DebugAttachRequest { Method = "debug.attach", ProcessId = 1234 };
         _debugBridgeMock.Setup(x => x.IsConnected).Returns(false);
         _debugBridgeMock.Setup(x => x.InitializeAsync()).ReturnsAsync(true);
 
@@ -41,7 +41,7 @@ public class DebugLifecycleToolTests
     public async Task HandleAttachAsync_WhenBridgeInitFails_ReturnsError()
     {
         // Arrange
-        var request = new DebugAttachRequest { ProcessId = 1234 };
+        var request = new DebugAttachRequest { Method = "debug.attach", ProcessId = 1234 };
         _debugBridgeMock.Setup(x => x.IsConnected).Returns(false);
         _debugBridgeMock.Setup(x => x.InitializeAsync()).ReturnsAsync(false);
 
@@ -58,7 +58,7 @@ public class DebugLifecycleToolTests
     public async Task HandleLaunchAsync_ValidProgram_ReturnsSession()
     {
         // Arrange
-        var request = new DebugLaunchRequest { Program = "test.exe" };
+        var request = new DebugLaunchRequest { Method = "debug.launch", Program = "test.exe" };
         _debugBridgeMock.Setup(x => x.IsConnected).Returns(true);
 
         // Act
@@ -77,7 +77,7 @@ public class DebugLifecycleToolTests
     public async Task HandleAsync_UnsupportedMethod_ReturnsError()
     {
         // Arrange
-        var request = new DebugAttachRequest { ProcessId = 1234 };
+        var request = new DebugAttachRequest { Method = "debug.attach", ProcessId = 1234 };
         request.Method = "unsupported.method";
 
         // Act

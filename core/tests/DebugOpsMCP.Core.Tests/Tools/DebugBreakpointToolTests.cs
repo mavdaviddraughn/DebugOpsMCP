@@ -26,6 +26,7 @@ public class DebugBreakpointToolTests
         // Arrange
         var request = new DebugSetBreakpointRequest 
         { 
+            Method = "debug.setBreakpoint",
             File = "test.cs", 
             Line = 10 
         };
@@ -47,6 +48,7 @@ public class DebugBreakpointToolTests
         // Arrange
         var request = new DebugSetBreakpointRequest 
         { 
+            Method = "debug.setBreakpoint",
             File = "test.cs", 
             Line = 10,
             Condition = "x > 5"
@@ -74,6 +76,7 @@ public class DebugBreakpointToolTests
         // Arrange
         var request = new DebugRemoveBreakpointRequest 
         { 
+            Method = "debug.removeBreakpoint",
             BreakpointId = "nonexistent" 
         };
         _debugBridgeMock.Setup(x => x.IsConnected).Returns(true);
@@ -94,6 +97,7 @@ public class DebugBreakpointToolTests
         // Arrange - First set a breakpoint
         var setRequest = new DebugSetBreakpointRequest 
         { 
+            Method = "debug.setBreakpoint",
             File = "test.cs", 
             Line = 10 
         };
@@ -101,7 +105,7 @@ public class DebugBreakpointToolTests
         
         await _tool.HandleAsync(setRequest);
         
-        var listRequest = new DebugListBreakpointsRequest();
+        var listRequest = new DebugListBreakpointsRequest() { Method = "debug.listBreakpoints" };
 
         // Act
         var response = await _tool.HandleAsync(listRequest);

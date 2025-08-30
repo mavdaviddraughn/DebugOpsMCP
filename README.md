@@ -1,24 +1,451 @@
 # DebugOpsMCP
 
-A VS Code extension that exposes debugging automation capabilities through the Model Context Protocol (MCP) to enable GitHub Copilot Agent Mode to perform sophisticated debugging operations.
+## Overview
 
-## Problem Statement
+DebugOpsMCP is a Model Context Protocol (MCP) server that enables AI assistants to interact with debugging tools and inspect running processes. It provides a comprehensive debugging interface through VS Code integration and supports both local and remote debugging scenarios.
 
-Modern AI agents like GitHub Copilot need programmatic access to debugging capabilities to help developers diagnose issues, set breakpoints, inspect variables, and step through code execution. Currently, there's no standardized way for AI agents to interact with debuggers across different editors and platforms.
+## Features
 
-DebugOpsMCP bridges this gap by providing a structured MCP interface that translates high-level debugging commands from AI agents into Debug Adapter Protocol (DAP) operations in VS Code.
+- **🔧 Comprehensive Debug Operations**: Attach/detach, breakpoints, execution control, variable inspection
+- **🤖 AI Assistant Integration**: Native support for AI-driven debugging workflows
+- **🔌 VS Code Extension**: Seamless integration with Visual Studio Code debugger
+- **🔄 Real-time Communication**: Bidirectional JSON-RPC protocol over stdio
+- **🛡️ Robust Error Handling**: Custom exception hierarchy with retry mechanisms
+- **🎯 Automatic Discovery**: Multiple fallback paths for server detection
+- **📊 Performance Monitoring**: Built-in profiling and analysis tools
 
-## Scope & Constraints
+## Quick Start
 
-### Phase 1 (MVP) - Core Debugging
-- **IN SCOPE**: Basic debugging operations (attach/launch, breakpoints, stepping, stack inspection, variable evaluation, thread management)
-- **IN SCOPE**: VS Code extension with DAP integration
-- **IN SCOPE**: Editor-agnostic core server architecture
-- **OUT OF SCOPE**: WPF-specific visual tree/binding probes (deferred to Phase 2)
-- **OUT OF SCOPE**: Hot Reload, Live Visual Tree, designer tooling
-- **OUT OF SCOPE**: Visual Studio VSIX (planned for Phase 3)
+### Prerequisites
 
-### Technical Constraints
+- .NET 8.0 or later
+- Visual Studio Code
+- Node.js 18+ (for extension development)
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd DebugOpsMCP
+   ```
+
+2. **Build the core server**
+   ```bash
+   cd core
+   dotnet build DebugOpsMCP.sln
+   ```
+
+3. **Install VS Code extension**
+   ```bash
+   cd ../vscode-extension
+   npm install
+   npm run compile
+   code --install-extension .
+   ```
+
+4. **Run the server**
+   ```bash
+   cd ../core/src/DebugOpsMCP.Host
+   dotnet run
+   ```
+
+### Basic Usage
+
+**Health Check**
+```bash
+echo '{"jsonrpc":"2.0","id":"1","method":"health"}' | dotnet run
+```
+
+**Attach to Process**
+```bash
+echo '{"jsonrpc":"2.0","id":"2","method":"debug.attach","params":{"processId":1234}}' | dotnet run
+```
+
+**Set Breakpoint**
+```bash
+echo '{"jsonrpc":"2.0","id":"3","method":"debug.setBreakpoint","params":{"file":"C:\\source\\app.cs","line":42}}' | dotnet run
+```
+
+## Architecture
+
+```mermaid
+graph TD
+    A[AI Assistant] --> B[MCP Client]
+    B --> C[DebugOpsMCP Server]
+    C --> D[Debug Bridge]
+    D --> E[VS Code Extension]
+    E --> F[Debug Adapter Protocol]
+    F --> G[Target Process]
+```
+
+### Core Components
+
+- **MCP Server**: Handles JSON-RPC requests and routes to appropriate debug tools
+- **Debug Bridge**: Manages communication with VS Code extension via stdio
+- **VS Code Extension**: Integrates with VS Code's debugging infrastructure
+- **Debug Tools**: Specialized handlers for different debugging operations
+
+## MCP Protocol Methods
+
+### Lifecycle Management
+- `debug.attach` - Attach debugger to running process
+- `debug.launch` - Launch program for debugging  
+- `debug.detach` - Detach from debug session
+- `debug.terminate` - Terminate debug session
+
+### Execution Control
+- `debug.continue` - Continue execution
+- `debug.step` - Step through code (over/into/out)
+- `debug.pause` - Pause execution
+- `debug.restart` - Restart debug session
+
+### Breakpoint Management
+- `debug.setBreakpoint` - Set breakpoint at location
+- `debug.removeBreakpoint` - Remove breakpoint
+- `debug.listBreakpoints` - List all breakpoints
+- `debug.toggleBreakpoint` - Toggle breakpoint state
+
+### Code Inspection
+- `debug.getStackTrace` - Get current call stack
+- `debug.getVariables` - Get variables in scope
+- `debug.evaluate` - Evaluate expressions
+- `debug.getSource` - Get source code
+
+### Thread Management
+- `debug.getThreads` - List all threads
+- `debug.getStatus` - Get debug session status
+- `debug.selectThread` - Switch active thread
+
+## AI Assistant Integration
+
+### Python Example
+```python
+from debugops_mcp_client import DebugOpsMCPClient
+
+async def ai_debugging_session():
+    client = DebugOpsMCPClient("DebugOpsMCP.Host.dll")
+    
+    # Attach to process
+    await client.send_request("debug.attach", {"processId": 1234})
+    
+    # Set conditional breakpoint
+    await client.send_request("debug.setBreakpoint", {
+        "file": "C:\\source\\app.cs",
+        "line": 42,
+        "condition": "variable > 10"
+    })
+    
+    # Continue and analyze when breakpoint hits
+    await client.send_request("debug.continue")
+    
+    # Get context for AI analysis
+    stack = await client.send_request("debug.getStackTrace", {"threadId": 12345})
+    variables = await client.send_request("debug.getVariables", {"frameId": "frame-1"})
+    
+    # AI can now analyze the debug context
+    return {"stack": stack, "variables": variables}
+```
+
+### OpenAI Function Calling
+```python
+import openai
+
+functions = [
+    {
+        "name": "debug_attach",
+        "description": "Attach debugger to process",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "processId": {"type": "integer"}
+            }
+        }
+    },
+    {
+        "name": "set_breakpoint",
+        "description": "Set breakpoint in code",
+        "parameters": {
+            "type": "object", 
+            "properties": {
+                "file": {"type": "string"},
+                "line": {"type": "integer"},
+                "condition": {"type": "string"}
+            }
+        }
+    }
+]
+
+response = openai.ChatCompletion.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Debug my crashing application"}],
+    functions=functions,
+    function_call="auto"
+)
+```
+
+## VS Code Extension
+
+### Configuration
+```json
+{
+  "debugops-mcp.serverPath": "C:\\path\\to\\DebugOpsMCP.Host.dll",
+  "debugops-mcp.serverTimeout": 10000,
+  "debugops-mcp.autoDetectServer": true
+}
+```
+
+### Launch Configuration  
+```json
+{
+  "name": "DebugOps MCP Attach",
+  "type": "debugops-mcp",
+  "request": "attach", 
+  "processId": "${command:pickProcess}",
+  "configuration": {
+    "stopOnEntry": false,
+    "justMyCode": true
+  }
+}
+```
+
+## Error Handling
+
+The framework provides comprehensive error handling with custom exception types:
+
+```csharp
+try
+{
+    var response = await debugBridge.SendRequestAsync<TRequest, TResponse>(request);
+}
+catch (DebugTimeoutException ex)
+{
+    // Handle timeout with retry logic
+}
+catch (DebugAttachmentException ex)
+{
+    // Handle process attachment failure
+}
+catch (DebugBridgeConnectionException ex)
+{
+    // Handle VS Code extension connection failure
+}
+```
+
+Common error codes:
+- `DEBUG_ATTACHMENT_FAILED` - Cannot attach to process
+- `DEBUG_TIMEOUT` - Operation timed out  
+- `BREAKPOINT_SET_FAILED` - Cannot set breakpoint
+- `EVALUATION_FAILED` - Expression evaluation failed
+- `SESSION_NOT_FOUND` - Debug session not active
+
+## Development
+
+### Building from Source
+```bash
+# Build core server
+cd core
+dotnet build DebugOpsMCP.sln
+
+# Build VS Code extension
+cd ../vscode-extension
+npm install
+npm run compile
+
+# Run tests
+cd ../core
+dotnet test
+```
+
+### Creating Custom Debug Tools
+```csharp
+public class CustomDebugTool : IDebugTool
+{
+    public bool CanHandle(string method) => method.StartsWith("debug.custom.");
+    
+    public async Task<McpResponse> HandleAsync(McpRequest request)
+    {
+        // Handle custom debug operations
+        return McpResponse.Success("Custom operation completed");
+    }
+}
+
+// Register in DI container
+services.AddScoped<IDebugTool, CustomDebugTool>();
+```
+
+### Extending the VS Code Extension
+```typescript
+// Handle custom debug operations
+private async handleCustomRequest(message: any): Promise<any> {
+    const { method, data } = message;
+    
+    switch (method) {
+        case 'debug.custom.analyze':
+            return await this.performCustomAnalysis(data);
+        default:
+            throw new Error(`Unknown custom method: ${method}`);
+    }
+}
+```
+
+## Deployment
+
+### Self-Contained Deployment
+```bash
+dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+```
+
+### Docker Deployment  
+```dockerfile
+FROM mcr.microsoft.com/dotnet/runtime:8.0
+WORKDIR /app
+COPY publish/ .
+ENTRYPOINT ["dotnet", "DebugOpsMCP.Host.dll"]
+```
+
+### VS Code Extension Package
+```bash
+cd vscode-extension
+vsce package
+vsce publish
+```
+
+## Use Cases
+
+### 1. AI-Powered Bug Investigation
+- Automatically attach to crashing processes
+- Set intelligent breakpoints based on error patterns
+- Analyze call stacks and variable states
+- Generate debugging insights and recommendations
+
+### 2. Automated Testing and Validation
+- Verify application state during test execution
+- Validate variable values and object states
+- Ensure proper resource cleanup
+- Monitor performance characteristics
+
+### 3. Production Debugging
+- Safely inspect running production systems
+- Non-invasive monitoring and analysis
+- Capture diagnostic information
+- Troubleshoot performance issues
+
+### 4. Educational and Training
+- Interactive debugging tutorials
+- Step-by-step code execution analysis  
+- Real-time variable tracking
+- Code flow visualization
+
+## Configuration
+
+### Server Configuration
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "DebugOpsMCP": "Debug"
+    }
+  },
+  "DebugBridge": {
+    "TimeoutMs": 10000,
+    "RetryAttempts": 3,
+    "EnableLogging": true
+  }
+}
+```
+
+### Extension Configuration
+```json
+{
+  "debugops-mcp.serverPath": "auto",
+  "debugops-mcp.serverTimeout": 15000,
+  "debugops-mcp.showServerOutput": false,
+  "debugops-mcp.logLevel": "Information"
+}
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Server not found**
+- Verify .NET 8.0 is installed
+- Check server path configuration
+- Ensure server executable exists
+
+**Connection timeout**  
+- Increase timeout settings
+- Check firewall/antivirus blocking
+- Verify VS Code extension is installed
+
+**Attachment failed**
+- Run as administrator if needed
+- Check process exists and is debuggable
+- Verify debugging symbols are available
+
+**Bridge connection lost**
+- Restart VS Code
+- Rebuild and reinstall extension
+- Check server logs for errors
+
+### Debugging the Debugger
+
+Enable detailed logging:
+```json
+{
+  "debugops-mcp.logLevel": "Debug",
+  "debugops-mcp.showServerOutput": true
+}
+```
+
+Check server logs:
+```bash
+dotnet run --project DebugOpsMCP.Host -- --verbose
+```
+
+Monitor VS Code extension output:
+1. Open VS Code Developer Tools (F12)
+2. Check Console for extension errors
+3. View Output panel for DebugOps MCP logs
+
+## API Reference
+
+For complete API documentation, see:
+- [Protocol Guide](docs/mcp-protocol-guide.md) - Complete MCP protocol specification
+- [API Reference](docs/api-reference.md) - Detailed API documentation  
+- [Extension Guide](docs/extension-development-guide.md) - VS Code extension development
+- [Usage Examples](docs/examples/usage-examples.md) - Practical usage examples
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Ensure all tests pass
+6. Submit a pull request
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/your-org/debugops-mcp/issues)
+- **Documentation**: [docs/](docs/) directory
+- **Examples**: [docs/examples/](docs/examples/) directory
+- **Discussions**: [GitHub Discussions](https://github.com/your-org/debugops-mcp/discussions)
+
+## Acknowledgments
+
+- Model Context Protocol (MCP) specification
+- Visual Studio Code debugging infrastructure
+- .NET debugging APIs
+- Community contributors and testers
 - Target: .NET 8 for core server
 - Primary target processes: .NET Framework 4.8 x86 (but architecture supports others)
 - Transport: MCP over stdio (JSON-RPC)

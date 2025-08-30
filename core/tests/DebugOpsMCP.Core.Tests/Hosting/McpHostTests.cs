@@ -124,7 +124,7 @@ public class McpHostTests
         Assert.True(response.Contains("success") || response.Contains("error"));
     }
 
-    public void Dispose()
+    private void Dispose()
     {
         (_serviceProvider as IDisposable)?.Dispose();
     }

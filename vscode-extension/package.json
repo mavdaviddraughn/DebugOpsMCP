@@ -44,8 +44,9 @@
       "properties": {
         "debugops-mcp.serverPath": {
           "type": "string",
-          "description": "Path to the DebugOpsMCP server executable",
-          "default": ""
+          "description": "Path to the DebugOpsMCP server executable. Leave empty for automatic detection.",
+          "default": "",
+          "markdownDescription": "Specify the path to `DebugOpsMCP.Host.dll`. If empty, the extension will automatically search for the server in common locations: \n\n- `../core/src/DebugOpsMCP.Host/bin/Debug/net8.0/` \n- `../core/src/DebugOpsMCP.Host/bin/Release/net8.0/` \n- `./server/` \n- Same directory as extension"
         },
         "debugops-mcp.logLevel": {
           "type": "string",
@@ -64,6 +65,18 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically start the DebugOpsMCP server when VS Code opens"
+        },
+        "debugops-mcp.serverTimeout": {
+          "type": "number",
+          "default": 10000,
+          "description": "Timeout in milliseconds for server startup",
+          "minimum": 1000,
+          "maximum": 60000
+        },
+        "debugops-mcp.showServerOutput": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show server output in the VS Code output panel for debugging"
         }
       }
     }

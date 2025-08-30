@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 using Xunit;
 
 namespace DebugOpsMCP.Integration.Tests;
@@ -63,50 +64,287 @@ public class McpServerIntegrationTests : IAsyncLifetime
     public async Task HealthCheck_ReturnsSuccess()
     {
         // Arrange
-        var request = """{"method":"health"}""";
+        var requestId = Guid.NewGuid().ToString();
+        var request = JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0",
+            id = requestId,
+            method = "health"
+        });
 
         // Act
         var response = await SendRequestAsync(request);
 
         // Assert
         Assert.NotNull(response);
-        Assert.Contains("success", response);
-        Assert.Contains("true", response);
+        var jsonDoc = JsonDocument.Parse(response);
+        var root = jsonDoc.RootElement;
+        
+        Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
+        Assert.Equal("2.0", jsonrpc.GetString());
+        
+        Assert.True(root.TryGetProperty("id", out var id));
+        Assert.Equal(requestId, id.GetString());
+        
+        Assert.True(root.TryGetProperty("result", out var result));
+        Assert.True(result.TryGetProperty("success", out var success));
+        Assert.True(success.GetBoolean());
     }
 
     [Fact]
-    public async Task DebugAttach_ReturnsNotImplemented()
+    public async Task DebugGetStatus_ReturnsValidStatus()
     {
         // Arrange
-        var request = """{"method":"debug.attach","processId":1234}""";
+        var requestId = Guid.NewGuid().ToString();
+        var request = JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0",
+            id = requestId,
+            method = "debug.getStatus"
+        });
 
         // Act
         var response = await SendRequestAsync(request);
 
         // Assert
         Assert.NotNull(response);
-        Assert.Contains("NOT_IMPLEMENTED", response);
-        Assert.Contains("debug.attach", response);
+        var jsonDoc = JsonDocument.Parse(response);
+        var root = jsonDoc.RootElement;
+        
+        Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
+        Assert.Equal("2.0", jsonrpc.GetString());
+        
+        Assert.True(root.TryGetProperty("id", out var id));
+        Assert.Equal(requestId, id.GetString());
+        
+        Assert.True(root.TryGetProperty("result", out var result));
+        Assert.True(result.TryGetProperty("data", out var data));
+        Assert.True(data.TryGetProperty("isDebugging", out _));
+        Assert.True(data.TryGetProperty("isPaused", out _));
     }
 
     [Fact]
-    public async Task MultipleRequests_AllGetResponses()
+    public async Task DebugGetThreads_ReturnsThreadList()
+    {
+        // Arrange
+        var requestId = Guid.NewGuid().ToString();
+        var request = JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0",
+            id = requestId,
+            method = "debug.getThreads"
+        });
+
+        // Act
+        var response = await SendRequestAsync(request);
+
+        // Assert
+        Assert.NotNull(response);
+        var jsonDoc = JsonDocument.Parse(response);
+        var root = jsonDoc.RootElement;
+        
+        Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
+        Assert.Equal("2.0", jsonrpc.GetString());
+        
+        Assert.True(root.TryGetProperty("id", out var id));
+        Assert.Equal(requestId, id.GetString());
+        
+        // Should return either result with data or error (since no debug session is active)
+        Assert.True(root.TryGetProperty("result", out var result) || root.TryGetProperty("error", out _));
+        
+        if (result.ValueKind != JsonValueKind.Undefined)
+        {
+            Assert.True(result.TryGetProperty("data", out var data));
+            Assert.Equal(JsonValueKind.Array, data.ValueKind);
+        }
+    }
+
+    [Fact]
+    public async Task DebugAttach_WithInvalidProcessId_ReturnsError()
+    {
+        // Arrange
+        var requestId = Guid.NewGuid().ToString();
+        var request = JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0",
+            id = requestId,
+            method = "debug.attach",
+            @params = new
+            {
+                processId = 999999, // Non-existent process ID
+                configuration = new Dictionary<string, object>()
+            }
+        });
+
+        // Act
+        var response = await SendRequestAsync(request);
+
+        // Assert
+        Assert.NotNull(response);
+        var jsonDoc = JsonDocument.Parse(response);
+        var root = jsonDoc.RootElement;
+        
+        Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
+        Assert.Equal("2.0", jsonrpc.GetString());
+        
+        Assert.True(root.TryGetProperty("id", out var id));
+        Assert.Equal(requestId, id.GetString());
+        
+        // Should return error for invalid process
+        Assert.True(root.TryGetProperty("error", out var error));
+        Assert.True(error.TryGetProperty("message", out var message));
+        var errorMessage = message.GetString();
+        Assert.NotNull(errorMessage);
+        Assert.Contains("attach", errorMessage.ToLowerInvariant());
+    }
+
+    [Fact]
+    public async Task DebugSetBreakpoint_ReturnsBreakpointInfo()
+    {
+        // Arrange
+        var requestId = Guid.NewGuid().ToString();
+        var request = JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0",
+            id = requestId,
+            method = "debug.setBreakpoint",
+            @params = new
+            {
+                file = @"C:\test\program.cs",
+                line = 10,
+                condition = "variable > 5"
+            }
+        });
+
+        // Act
+        var response = await SendRequestAsync(request);
+
+        // Assert
+        Assert.NotNull(response);
+        var jsonDoc = JsonDocument.Parse(response);
+        var root = jsonDoc.RootElement;
+        
+        Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
+        Assert.Equal("2.0", jsonrpc.GetString());
+        
+        Assert.True(root.TryGetProperty("id", out var id));
+        Assert.Equal(requestId, id.GetString());
+        
+        // Should return result with breakpoint info or error
+        if (root.TryGetProperty("result", out var result))
+        {
+            Assert.True(result.TryGetProperty("data", out var data));
+            Assert.True(data.TryGetProperty("id", out _));
+            Assert.True(data.TryGetProperty("file", out _));
+            Assert.True(data.TryGetProperty("line", out _));
+        }
+        else
+        {
+            // If no active debug session, should return error
+            Assert.True(root.TryGetProperty("error", out _));
+        }
+    }
+
+    [Fact]
+    public async Task DebugListBreakpoints_ReturnsBreakpointArray()
+    {
+        // Arrange
+        var requestId = Guid.NewGuid().ToString();
+        var request = JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0",
+            id = requestId,
+            method = "debug.listBreakpoints"
+        });
+
+        // Act
+        var response = await SendRequestAsync(request);
+
+        // Assert
+        Assert.NotNull(response);
+        var jsonDoc = JsonDocument.Parse(response);
+        var root = jsonDoc.RootElement;
+        
+        Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
+        Assert.Equal("2.0", jsonrpc.GetString());
+        
+        Assert.True(root.TryGetProperty("id", out var id));
+        Assert.Equal(requestId, id.GetString());
+        
+        Assert.True(root.TryGetProperty("result", out var result));
+        Assert.True(result.TryGetProperty("data", out var data));
+        Assert.Equal(JsonValueKind.Array, data.ValueKind);
+    }
+
+    [Fact]
+    public async Task InvalidMethod_ReturnsMethodNotFoundError()
+    {
+        // Arrange
+        var requestId = Guid.NewGuid().ToString();
+        var request = JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0",
+            id = requestId,
+            method = "nonexistent.method"
+        });
+
+        // Act
+        var response = await SendRequestAsync(request);
+
+        // Assert
+        Assert.NotNull(response);
+        var jsonDoc = JsonDocument.Parse(response);
+        var root = jsonDoc.RootElement;
+        
+        Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
+        Assert.Equal("2.0", jsonrpc.GetString());
+        
+        Assert.True(root.TryGetProperty("id", out var id));
+        Assert.Equal(requestId, id.GetString());
+        
+        Assert.True(root.TryGetProperty("error", out var error));
+        Assert.True(error.TryGetProperty("code", out var code));
+        Assert.Equal(-32601, code.GetInt32()); // Method not found
+    }
+
+    [Fact]
+    public async Task ConcurrentRequests_AllReceiveResponses()
     {
         // Arrange
         var requests = new[]
         {
-            """{"method":"health"}""",
-            """{"method":"debug.getStatus"}""",
-            """{"method":"debug.getThreads"}"""
+            ("health", JsonSerializer.Serialize(new { jsonrpc = "2.0", id = "req1", method = "health" })),
+            ("status", JsonSerializer.Serialize(new { jsonrpc = "2.0", id = "req2", method = "debug.getStatus" })),
+            ("threads", JsonSerializer.Serialize(new { jsonrpc = "2.0", id = "req3", method = "debug.getThreads" })),
+            ("breakpoints", JsonSerializer.Serialize(new { jsonrpc = "2.0", id = "req4", method = "debug.listBreakpoints" }))
         };
 
-        // Act & Assert
-        foreach (var request in requests)
+        // Act - Send all requests concurrently
+        var responseTasks = requests.Select(async (req, index) =>
         {
-            var response = await SendRequestAsync(request);
-            Assert.NotNull(response);
-            // All should at least have a success field or error
-            Assert.True(response.Contains("success") || response.Contains("error"));
+            var response = await SendRequestAsync(req.Item2);
+            return (Name: req.Item1, Response: response);
+        }).ToArray();
+
+        var results = await Task.WhenAll(responseTasks);
+
+        // Assert - All requests should receive proper JSON-RPC responses
+        Assert.Equal(requests.Length, results.Length);
+        
+        foreach (var result in results)
+        {
+            Assert.NotNull(result.Response);
+            var jsonDoc = JsonDocument.Parse(result.Response);
+            var root = jsonDoc.RootElement;
+            
+            Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
+            Assert.Equal("2.0", jsonrpc.GetString());
+            
+            Assert.True(root.TryGetProperty("id", out var id));
+            Assert.True(id.GetString()?.StartsWith("req"));
+            
+            // Should have either result or error
+            Assert.True(root.TryGetProperty("result", out _) || root.TryGetProperty("error", out _));
         }
     }
 

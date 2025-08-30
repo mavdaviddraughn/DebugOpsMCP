@@ -1,6 +1,7 @@
 using DebugOpsMCP.Contracts;
 using DebugOpsMCP.Contracts.Debug;
 using DebugOpsMCP.Core.Debug;
+using DebugOpsMCP.Core.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace DebugOpsMCP.Core.Tools;
@@ -8,6 +9,9 @@ namespace DebugOpsMCP.Core.Tools;
 /// <summary>
 /// Handles breakpoint operations (set, remove, list)
 /// </summary>
+[McpMethod("debug.setBreakpoint", typeof(DebugSetBreakpointRequest), "Set a breakpoint at specified location", "debug", "breakpoint")]
+[McpMethod("debug.removeBreakpoint", typeof(DebugRemoveBreakpointRequest), "Remove a breakpoint by ID", "debug", "breakpoint")]
+[McpMethod("debug.listBreakpoints", typeof(DebugListBreakpointsRequest), "List all active breakpoints", "debug", "breakpoint")]
 public class DebugBreakpointTool : IDebugBreakpointTool
 {
     private readonly ILogger<DebugBreakpointTool> _logger;
@@ -40,7 +44,7 @@ public class DebugBreakpointTool : IDebugBreakpointTool
         };
     }
 
-    private Task<McpResponse> HandleSetBreakpointAsync(DebugSetBreakpointRequest request)
+    private async Task<McpResponse> HandleSetBreakpointAsync(DebugSetBreakpointRequest request)
     {
         try
         {
@@ -48,55 +52,56 @@ public class DebugBreakpointTool : IDebugBreakpointTool
 
             if (!_debugBridge.IsConnected)
             {
-                return Task.FromResult<McpResponse>(new McpErrorResponse
+                return new McpErrorResponse
                 {
                     Error = new McpError
                     {
                         Code = "NO_DEBUG_SESSION",
                         Message = "No active debug session. Use debug.attach() or debug.launch() first."
                     }
-                });
+                };
             }
 
-            // TODO: Send actual DAP setBreakpoints request
-            // For now, create a mock breakpoint
-            var breakpointId = Guid.NewGuid().ToString();
-            var breakpoint = new DebugBreakpoint
+            // Send setBreakpoint request through debug bridge
+            var bridgeResponse = await _debugBridge.SendRequestAsync<DebugSetBreakpointRequest, DebugBreakpointResponse>(request);
+            
+            if (bridgeResponse.Success && bridgeResponse.Result != null)
             {
-                Id = breakpointId,
-                File = request.File,
-                Line = request.Line,
-                Verified = true, // TODO: Get actual verification from DAP
-                Condition = request.Condition,
-                HitCondition = request.HitCondition
-            };
-
-            _breakpoints[breakpointId] = breakpoint;
-
-            _logger.LogInformation("Breakpoint set successfully: {BreakpointId} at {File}:{Line}", 
-                breakpointId, request.File, request.Line);
-
-            return Task.FromResult<McpResponse>(new DebugBreakpointResponse
+                // Store the breakpoint locally for tracking
+                _breakpoints[bridgeResponse.Result.Id] = bridgeResponse.Result;
+                
+                _logger.LogInformation("Breakpoint set successfully: {BreakpointId} at {File}:{Line}", 
+                    bridgeResponse.Result.Id, request.File, request.Line);
+                    
+                return bridgeResponse;
+            }
+            else
             {
-                Success = true,
-                Result = breakpoint
-            });
+                return new McpErrorResponse
+                {
+                    Error = new McpError
+                    {
+                        Code = "BREAKPOINT_SET_FAILED",
+                        Message = "Debug bridge setBreakpoint request failed"
+                    }
+                };
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to set breakpoint at {File}:{Line}", request.File, request.Line);
-            return Task.FromResult<McpResponse>(new McpErrorResponse
+            return new McpErrorResponse
             {
                 Error = new McpError
                 {
                     Code = "BREAKPOINT_SET_FAILED",
                     Message = ex.Message
                 }
-            });
+            };
         }
     }
 
-    private Task<McpResponse> HandleRemoveBreakpointAsync(DebugRemoveBreakpointRequest request)
+    private async Task<McpResponse> HandleRemoveBreakpointAsync(DebugRemoveBreakpointRequest request)
     {
         try
         {
@@ -104,50 +109,62 @@ public class DebugBreakpointTool : IDebugBreakpointTool
 
             if (!_debugBridge.IsConnected)
             {
-                return Task.FromResult<McpResponse>(new McpErrorResponse
+                return new McpErrorResponse
                 {
                     Error = new McpError
                     {
                         Code = "NO_DEBUG_SESSION",
                         Message = "No active debug session. Use debug.attach() or debug.launch() first."
                     }
-                });
+                };
             }
 
             if (!_breakpoints.TryGetValue(request.BreakpointId, out var breakpoint))
             {
-                return Task.FromResult<McpResponse>(new McpErrorResponse
+                return new McpErrorResponse
                 {
                     Error = new McpError
                     {
                         Code = "BREAKPOINT_NOT_FOUND",
                         Message = $"Breakpoint {request.BreakpointId} not found"
                     }
-                });
+                };
             }
 
-            // TODO: Send actual DAP remove breakpoint request
-            _breakpoints.Remove(request.BreakpointId);
-
-            _logger.LogInformation("Breakpoint removed successfully: {BreakpointId}", request.BreakpointId);
-
-            return Task.FromResult<McpResponse>(new McpResponse<string>
+            // Send removeBreakpoint request through debug bridge
+            var bridgeResponse = await _debugBridge.SendRequestAsync<DebugRemoveBreakpointRequest, McpResponse<string>>(request);
+            
+            if (bridgeResponse.Success)
             {
-                Success = true,
-                Result = $"Breakpoint {request.BreakpointId} removed"
-            });
+                // Remove from local tracking
+                _breakpoints.Remove(request.BreakpointId);
+                
+                _logger.LogInformation("Breakpoint removed successfully: {BreakpointId}", request.BreakpointId);
+                return bridgeResponse;
+            }
+            else
+            {
+                return new McpErrorResponse
+                {
+                    Error = new McpError
+                    {
+                        Code = "BREAKPOINT_REMOVE_FAILED",
+                        Message = "Debug bridge removeBreakpoint request failed"
+                    }
+                };
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to remove breakpoint {BreakpointId}", request.BreakpointId);
-            return Task.FromResult<McpResponse>(new McpErrorResponse
+            return new McpErrorResponse
             {
                 Error = new McpError
                 {
                     Code = "BREAKPOINT_REMOVE_FAILED",
                     Message = ex.Message
                 }
-            });
+            };
         }
     }
 

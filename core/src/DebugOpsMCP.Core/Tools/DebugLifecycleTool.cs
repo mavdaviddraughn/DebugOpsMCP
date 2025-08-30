@@ -1,6 +1,7 @@
 using DebugOpsMCP.Contracts;
 using DebugOpsMCP.Contracts.Debug;
 using DebugOpsMCP.Core.Debug;
+using DebugOpsMCP.Core.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace DebugOpsMCP.Core.Tools;
@@ -8,6 +9,10 @@ namespace DebugOpsMCP.Core.Tools;
 /// <summary>
 /// Handles debug lifecycle operations (attach, launch, disconnect, terminate)
 /// </summary>
+[McpMethod("debug.attach", typeof(DebugAttachRequest), "Attach to a running process for debugging", "debug", "lifecycle")]
+[McpMethod("debug.launch", typeof(DebugLaunchRequest), "Launch a program for debugging", "debug", "lifecycle")]
+[McpMethod("debug.disconnect", typeof(McpRequest), "Disconnect from current debug session", "debug", "lifecycle")]
+[McpMethod("debug.terminate", typeof(McpRequest), "Terminate current debug session", "debug", "lifecycle")]
 public class DebugLifecycleTool : IDebugLifecycleTool
 {
     private readonly ILogger<DebugLifecycleTool> _logger;
@@ -62,30 +67,27 @@ public class DebugLifecycleTool : IDebugLifecycleTool
                 }
             }
 
-            // TODO: Implement actual DAP attach request
-            // For now, simulate a successful attach
-            var session = new DebugSession
+            // Send attach request through debug bridge
+            var bridgeResponse = await _debugBridge.SendRequestAsync<DebugAttachRequest, DebugSessionResponse>(request);
+            
+            if (bridgeResponse.Success && bridgeResponse.Result != null)
             {
-                SessionId = Guid.NewGuid().ToString(),
-                Status = "running",
-                Capabilities = new DebugCapabilities
+                _logger.LogInformation("Successfully attached to process {ProcessId}, session {SessionId}", 
+                    request.ProcessId, bridgeResponse.Result.SessionId);
+                    
+                return bridgeResponse;
+            }
+            else
+            {
+                return new McpErrorResponse
                 {
-                    SupportsBreakpoints = true,
-                    SupportsConditionalBreakpoints = true,
-                    SupportsEvaluateForHovers = true,
-                    SupportsStepBack = false,
-                    SupportsSetVariable = true
-                }
-            };
-
-            _logger.LogInformation("Successfully attached to process {ProcessId}, session {SessionId}", 
-                request.ProcessId, session.SessionId);
-
-            return new DebugSessionResponse
-            {
-                Success = true,
-                Result = session
-            };
+                    Error = new McpError
+                    {
+                        Code = "ATTACH_FAILED", 
+                        Message = "Debug bridge attach request failed"
+                    }
+                };
+            }
         }
         catch (Exception ex)
         {
@@ -123,30 +125,27 @@ public class DebugLifecycleTool : IDebugLifecycleTool
                 }
             }
 
-            // TODO: Implement actual DAP launch request
-            // For now, simulate a successful launch
-            var session = new DebugSession
+            // Send launch request through debug bridge  
+            var bridgeResponse = await _debugBridge.SendRequestAsync<DebugLaunchRequest, DebugSessionResponse>(request);
+            
+            if (bridgeResponse.Success && bridgeResponse.Result != null)
             {
-                SessionId = Guid.NewGuid().ToString(),
-                Status = "running",
-                Capabilities = new DebugCapabilities
+                _logger.LogInformation("Successfully launched program {Program}, session {SessionId}", 
+                    request.Program, bridgeResponse.Result.SessionId);
+                    
+                return bridgeResponse;
+            }
+            else
+            {
+                return new McpErrorResponse
                 {
-                    SupportsBreakpoints = true,
-                    SupportsConditionalBreakpoints = true,
-                    SupportsEvaluateForHovers = true,
-                    SupportsStepBack = false,
-                    SupportsSetVariable = true
-                }
-            };
-
-            _logger.LogInformation("Successfully launched program {Program}, session {SessionId}", 
-                request.Program, session.SessionId);
-
-            return new DebugSessionResponse
-            {
-                Success = true,
-                Result = session
-            };
+                    Error = new McpError
+                    {
+                        Code = "LAUNCH_FAILED",
+                        Message = "Debug bridge launch request failed"
+                    }
+                };
+            }
         }
         catch (Exception ex)
         {
@@ -168,14 +167,26 @@ public class DebugLifecycleTool : IDebugLifecycleTool
         {
             _logger.LogInformation("Disconnecting debug session");
 
-            // TODO: Implement actual DAP disconnect request
-            await Task.Delay(100); // Simulate disconnect time
-
-            return new McpResponse<string>
+            // Send disconnect request through debug bridge
+            var disconnectRequest = new { action = "disconnect" };
+            var bridgeResponse = await _debugBridge.SendRequestAsync<object, McpResponse<string>>(disconnectRequest);
+            
+            if (bridgeResponse.Success)
             {
-                Success = true,
-                Result = "Debug session disconnected"
-            };
+                _logger.LogInformation("Debug session disconnected successfully");
+                return bridgeResponse;
+            }
+            else
+            {
+                return new McpErrorResponse
+                {
+                    Error = new McpError
+                    {
+                        Code = "DISCONNECT_FAILED",
+                        Message = "Debug bridge disconnect request failed"
+                    }
+                };
+            }
         }
         catch (Exception ex)
         {
@@ -197,14 +208,26 @@ public class DebugLifecycleTool : IDebugLifecycleTool
         {
             _logger.LogInformation("Terminating debug session");
 
-            // TODO: Implement actual DAP terminate request
-            await Task.Delay(100); // Simulate terminate time
-
-            return new McpResponse<string>
+            // Send terminate request through debug bridge
+            var terminateRequest = new { action = "terminate" };
+            var bridgeResponse = await _debugBridge.SendRequestAsync<object, McpResponse<string>>(terminateRequest);
+            
+            if (bridgeResponse.Success)
             {
-                Success = true,
-                Result = "Debug session terminated"
-            };
+                _logger.LogInformation("Debug session terminated successfully");
+                return bridgeResponse;
+            }
+            else
+            {
+                return new McpErrorResponse
+                {
+                    Error = new McpError
+                    {
+                        Code = "TERMINATE_FAILED",
+                        Message = "Debug bridge terminate request failed"
+                    }
+                };
+            }
         }
         catch (Exception ex)
         {

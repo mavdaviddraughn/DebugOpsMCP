@@ -1,3 +1,4 @@
+using DebugOpsMCP.Contracts;
 using DebugOpsMCP.Contracts.Debug;
 using DebugOpsMCP.Core.Debug;
 using DebugOpsMCP.Core.Tools;
@@ -87,6 +88,6 @@ public class DebugLifecycleToolTests
         Assert.NotNull(response);
         Assert.False(response.Success);
         var errorResponse = Assert.IsType<DebugOpsMCP.Contracts.McpErrorResponse>(response);
-        Assert.Equal("METHOD_NOT_SUPPORTED", errorResponse.Error.Code);
+        Assert.Equal(DebugErrorCodes.METHOD_NOT_FOUND, errorResponse.Error.Code);
     }
 }

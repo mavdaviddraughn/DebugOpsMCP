@@ -13,17 +13,22 @@ public class McpHost
 {
     private readonly ILogger<McpHost> _logger;
     private readonly IServiceProvider _serviceProvider;
+    private readonly IMcpToolRegistry _toolRegistry;
     private readonly JsonSerializerOptions _jsonOptions;
 
-    public McpHost(ILogger<McpHost> logger, IServiceProvider serviceProvider)
+    public McpHost(ILogger<McpHost> logger, IServiceProvider serviceProvider, IMcpToolRegistry toolRegistry)
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
+        _toolRegistry = toolRegistry;
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             WriteIndented = false
         };
+        
+        // Initialize the tool registry
+        _toolRegistry.RegisterTools();
     }
 
     /// <summary>
@@ -161,43 +166,110 @@ public class McpHost
 
     private async Task<McpResponse> RouteRequestAsync(string method, string requestJson)
     {
-        return method switch
+        if (method == "health")
         {
-            "health" => await ProcessHealthRequestAsync(),
+            return await ProcessHealthRequestAsync();
+        }
 
-            // Debug lifecycle
-            "debug.attach" => await ProcessDebugRequestAsync<Contracts.Debug.DebugAttachRequest>(requestJson),
-            "debug.launch" => await ProcessDebugRequestAsync<Contracts.Debug.DebugLaunchRequest>(requestJson),
-            "debug.disconnect" => await ProcessDebugDisconnectAsync(),
-            "debug.terminate" => await ProcessDebugTerminateAsync(),
-
-            // Debug execution control
-            "debug.continue" => await ProcessDebugRequestAsync<Contracts.Debug.DebugContinueRequest>(requestJson),
-            "debug.pause" => await ProcessDebugRequestAsync<Contracts.Debug.DebugPauseRequest>(requestJson),
-            "debug.step" => await ProcessDebugRequestAsync<Contracts.Debug.DebugStepRequest>(requestJson),
-
-            // Debug breakpoints
-            "debug.setBreakpoint" => await ProcessDebugRequestAsync<Contracts.Debug.DebugSetBreakpointRequest>(requestJson),
-            "debug.removeBreakpoint" => await ProcessDebugRequestAsync<Contracts.Debug.DebugRemoveBreakpointRequest>(requestJson),
-            "debug.listBreakpoints" => await ProcessDebugRequestAsync<Contracts.Debug.DebugListBreakpointsRequest>(requestJson),
-
-            // Debug inspection
-            "debug.getStackTrace" => await ProcessDebugRequestAsync<Contracts.Debug.DebugGetStackTraceRequest>(requestJson),
-            "debug.getVariables" => await ProcessDebugRequestAsync<Contracts.Debug.DebugGetVariablesRequest>(requestJson),
-            "debug.evaluate" => await ProcessDebugRequestAsync<Contracts.Debug.DebugEvaluateRequest>(requestJson),
-            "debug.getThreads" => await ProcessDebugRequestAsync<Contracts.Debug.DebugGetThreadsRequest>(requestJson),
-            "debug.selectThread" => await ProcessDebugRequestAsync<Contracts.Debug.DebugSelectThreadRequest>(requestJson),
-            "debug.getStatus" => await ProcessDebugRequestAsync<Contracts.Debug.DebugGetStatusRequest>(requestJson),
-
-            _ => new McpErrorResponse
+        // Use tool registry to route debug requests
+        var tool = _toolRegistry.GetTool(method);
+        if (tool == null)
+        {
+            return new McpErrorResponse
             {
                 Error = new McpError
                 {
-                    Code = "METHOD_NOT_FOUND",
+                    Code = DebugErrorCodes.METHOD_NOT_FOUND,
                     Message = $"Unknown method: {method}"
                 }
+            };
+        }
+
+        try
+        {
+            // Parse the request using the method's expected type
+            var requestDoc = JsonDocument.Parse(requestJson);
+            var request = CreateRequestObject(method, requestDoc);
+            
+            if (request == null)
+            {
+                return new McpErrorResponse
+                {
+                    Error = new McpError
+                    {
+                        Code = DebugErrorCodes.INVALID_REQUEST,
+                        Message = "Failed to parse request for method: " + method
+                    }
+                };
             }
-        };
+
+            return await tool.HandleAsync(request);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to parse request JSON for method {Method}", method);
+            return new McpErrorResponse
+            {
+                Error = new McpError
+                {
+                    Code = DebugErrorCodes.INVALID_REQUEST,
+                    Message = ex.Message
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing request for method {Method}", method);
+            return new McpErrorResponse
+            {
+                Error = new McpError
+                {
+                    Code = DebugErrorCodes.INTERNAL_ERROR,
+                    Message = ex.Message
+                }
+            };
+        }
+    }
+
+    private McpRequest? CreateRequestObject(string method, JsonDocument requestDoc)
+    {
+        try
+        {
+            var json = requestDoc.RootElement.GetRawText();
+            
+            return method switch
+            {
+                // Debug lifecycle
+                "debug.attach" => JsonSerializer.Deserialize<Contracts.Debug.DebugAttachRequest>(json, _jsonOptions),
+                "debug.launch" => JsonSerializer.Deserialize<Contracts.Debug.DebugLaunchRequest>(json, _jsonOptions),
+                "debug.disconnect" => JsonSerializer.Deserialize<Contracts.Debug.DebugDisconnectRequest>(json, _jsonOptions),
+                "debug.terminate" => JsonSerializer.Deserialize<Contracts.Debug.DebugTerminateRequest>(json, _jsonOptions),
+                
+                // Debug execution control
+                "debug.continue" => JsonSerializer.Deserialize<Contracts.Debug.DebugContinueRequest>(json, _jsonOptions),
+                "debug.pause" => JsonSerializer.Deserialize<Contracts.Debug.DebugPauseRequest>(json, _jsonOptions),
+                "debug.step" => JsonSerializer.Deserialize<Contracts.Debug.DebugStepRequest>(json, _jsonOptions),
+                
+                // Debug breakpoints
+                "debug.setBreakpoint" => JsonSerializer.Deserialize<Contracts.Debug.DebugSetBreakpointRequest>(json, _jsonOptions),
+                "debug.removeBreakpoint" => JsonSerializer.Deserialize<Contracts.Debug.DebugRemoveBreakpointRequest>(json, _jsonOptions),
+                "debug.listBreakpoints" => JsonSerializer.Deserialize<Contracts.Debug.DebugListBreakpointsRequest>(json, _jsonOptions),
+                
+                // Debug inspection
+                "debug.getStackTrace" => JsonSerializer.Deserialize<Contracts.Debug.DebugGetStackTraceRequest>(json, _jsonOptions),
+                "debug.getVariables" => JsonSerializer.Deserialize<Contracts.Debug.DebugGetVariablesRequest>(json, _jsonOptions),
+                "debug.evaluate" => JsonSerializer.Deserialize<Contracts.Debug.DebugEvaluateRequest>(json, _jsonOptions),
+                "debug.getThreads" => JsonSerializer.Deserialize<Contracts.Debug.DebugGetThreadsRequest>(json, _jsonOptions),
+                "debug.selectThread" => JsonSerializer.Deserialize<Contracts.Debug.DebugSelectThreadRequest>(json, _jsonOptions),
+                "debug.getStatus" => JsonSerializer.Deserialize<Contracts.Debug.DebugGetStatusRequest>(json, _jsonOptions),
+                
+                _ => null
+            };
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task<McpResponse> ProcessHealthRequestAsync()
@@ -207,90 +279,6 @@ public class McpHost
         {
             Success = true,
             Result = "DebugOpsMCP server is running"
-        });
-    }
-
-    private async Task<McpResponse> ProcessDebugRequestAsync<T>(string requestJson) where T : McpRequest
-    {
-        try
-        {
-            var request = JsonSerializer.Deserialize<T>(requestJson, _jsonOptions);
-            if (request == null)
-            {
-                return new McpErrorResponse
-                {
-                    Error = new McpError
-                    {
-                        Code = "INVALID_REQUEST",
-                        Message = "Failed to deserialize request"
-                    }
-                };
-            }
-
-            // Get the appropriate tool for this request type
-            var tool = GetDebugTool(request.Method);
-            if (tool == null)
-            {
-                return new McpErrorResponse
-                {
-                    Error = new McpError
-                    {
-                        Code = "TOOL_NOT_FOUND",
-                        Message = $"No tool registered for method {request.Method}"
-                    }
-                };
-            }
-
-            // Delegate to the tool
-            return await tool.HandleAsync(request);
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogError(ex, "Failed to deserialize debug request");
-            return new McpErrorResponse
-            {
-                Error = new McpError
-                {
-                    Code = "JSON_PARSE_ERROR",
-                    Message = ex.Message
-                }
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error processing debug request");
-            return new McpErrorResponse
-            {
-                Error = new McpError
-                {
-                    Code = "TOOL_ERROR",
-                    Message = ex.Message
-                }
-            };
-        }
-    }
-
-    private async Task<McpResponse> ProcessDebugDisconnectAsync()
-    {
-        return await Task.FromResult(new McpErrorResponse
-        {
-            Error = new McpError
-            {
-                Code = "NOT_IMPLEMENTED",
-                Message = "Debug disconnect is not yet implemented"
-            }
-        });
-    }
-
-    private async Task<McpResponse> ProcessDebugTerminateAsync()
-    {
-        return await Task.FromResult(new McpErrorResponse
-        {
-            Error = new McpError
-            {
-                Code = "NOT_IMPLEMENTED",
-                Message = "Debug terminate is not yet implemented"
-            }
         });
     }
 
@@ -306,26 +294,6 @@ public class McpHost
         };
 
         return JsonSerializer.Serialize(errorResponse, _jsonOptions);
-    }
-
-    private IDebugTool? GetDebugTool(string method)
-    {
-        return method switch
-        {
-            "debug.attach" or "debug.launch" or "debug.disconnect" or "debug.terminate" =>
-                _serviceProvider.GetService<IDebugLifecycleTool>(),
-            "debug.continue" or "debug.pause" or "debug.step" =>
-                _serviceProvider.GetService<IDebugExecutionTool>(),
-            "debug.setBreakpoint" or "debug.removeBreakpoint" or "debug.listBreakpoints" =>
-                _serviceProvider.GetService<IDebugBreakpointTool>(),
-            "debug.getStackTrace" or "debug.getVariables" or "debug.evaluate" =>
-                _serviceProvider.GetService<IDebugInspectionTool>(),
-            "debug.getThreads" or "debug.selectThread" =>
-                _serviceProvider.GetService<IDebugThreadTool>(),
-            "debug.getStatus" =>
-                _serviceProvider.GetService<IDebugStatusTool>(),
-            _ => null
-        };
     }
 
     private int MapMcpErrorCodeToJsonRpcInt(string? mcpCode)

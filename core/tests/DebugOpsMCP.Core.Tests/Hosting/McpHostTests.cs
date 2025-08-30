@@ -19,6 +19,7 @@ public class McpHostTests
 
         // Register debug bridge and tools for testing
         services.AddSingleton<IDebugBridge, ExtensionMediatedDebugBridge>();
+        services.AddSingleton<IMcpToolRegistry, McpToolRegistry>();
         services.AddSingleton<IDebugLifecycleTool, DebugLifecycleTool>();
         services.AddSingleton<IDebugExecutionTool, DebugExecutionTool>();
         services.AddSingleton<IDebugBreakpointTool, DebugBreakpointTool>();
@@ -30,7 +31,8 @@ public class McpHostTests
 
         _mcpHost = new McpHost(
             _serviceProvider.GetRequiredService<ILogger<McpHost>>(),
-            _serviceProvider
+            _serviceProvider,
+            _serviceProvider.GetRequiredService<IMcpToolRegistry>()
         );
     }
 

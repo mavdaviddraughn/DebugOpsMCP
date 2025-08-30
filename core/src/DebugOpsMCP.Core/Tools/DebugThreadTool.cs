@@ -1,6 +1,7 @@
 using DebugOpsMCP.Contracts;
 using DebugOpsMCP.Contracts.Debug;
 using DebugOpsMCP.Core.Debug;
+using DebugOpsMCP.Core.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace DebugOpsMCP.Core.Tools;
@@ -8,6 +9,8 @@ namespace DebugOpsMCP.Core.Tools;
 /// <summary>
 /// Handles thread management operations (list, select)
 /// </summary>
+[McpMethod("debug.getThreads", typeof(DebugGetThreadsRequest), "List all threads", "debug", "thread")]
+[McpMethod("debug.selectThread", typeof(DebugSelectThreadRequest), "Switch active thread", "debug", "thread")]
 public class DebugThreadTool : IDebugThreadTool
 {
     private readonly ILogger<DebugThreadTool> _logger;
@@ -21,6 +24,11 @@ public class DebugThreadTool : IDebugThreadTool
         _debugBridge = debugBridge ?? throw new ArgumentNullException(nameof(debugBridge));
     }
 
+    public bool CanHandle(string method)
+    {
+        return method.StartsWith("debug.getThreads") || method.StartsWith("debug.selectThread");
+    }
+
     public async Task<McpResponse> HandleAsync(McpRequest request)
     {
         return request.Method switch
@@ -31,14 +39,14 @@ public class DebugThreadTool : IDebugThreadTool
             {
                 Error = new McpError
                 {
-                    Code = "METHOD_NOT_SUPPORTED",
+                    Code = DebugErrorCodes.METHOD_NOT_FOUND,
                     Message = $"Method {request.Method} not supported by DebugThreadTool"
                 }
             }
         };
     }
 
-    private Task<McpResponse> HandleGetThreadsAsync(DebugGetThreadsRequest request)
+    private async Task<McpResponse> HandleGetThreadsAsync(DebugGetThreadsRequest request)
     {
         try
         {
@@ -46,59 +54,48 @@ public class DebugThreadTool : IDebugThreadTool
 
             if (!_debugBridge.IsConnected)
             {
-                return Task.FromResult<McpResponse>(new McpErrorResponse
-                {
-                    Error = new McpError
-                    {
-                        Code = "NO_DEBUG_SESSION",
-                        Message = "No active debug session. Use debug.attach() or debug.launch() first."
-                    }
-                });
-            }
-
-            // TODO: Send actual DAP threads request
-            // For now, return mock threads
-            var mockThreads = new[]
+            return new McpErrorResponse
             {
-                new DebugThread
+                Error = new McpError
                 {
-                    Id = 1,
-                    Name = "Main Thread",
-                    Status = "paused"
-                },
-                new DebugThread
-                {
-                    Id = 2,
-                    Name = "Background Worker",
-                    Status = "running"
-                },
-                new DebugThread
-                {
-                    Id = 3,
-                    Name = "UI Thread",
-                    Status = "running"
+                    Code = DebugErrorCodes.NO_DEBUG_SESSION,
+                    Message = "No active debug session. Use debug.attach() or debug.launch() first."
                 }
             };
+            }
 
-            _logger.LogInformation("Threads retrieved: {ThreadCount} threads", mockThreads.Length);
+            // Send actual DAP threads request
+            var dapRequest = new DapThreadsRequest();
 
-            return Task.FromResult<McpResponse>(new DebugThreadsResponse
+            var dapResponse = await _debugBridge.SendRequestAsync<DapThreadsRequest, DapThreadsResponse>(dapRequest);
+
+            // Convert DAP response to our internal format
+            var threads = dapResponse.Body?.Threads?.Select(t => new DebugThread
+            {
+                Id = t.Id,
+                Name = t.Name,
+                Status = "unknown" // DAP threads don't provide status, would need separate requests
+            }).ToArray() ?? Array.Empty<DebugThread>();
+
+            _logger.LogInformation("Threads retrieved: {ThreadCount} threads", threads.Length);
+
+            return new DebugThreadsResponse
             {
                 Success = true,
-                Result = mockThreads
-            });
+                Result = threads
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get threads");
-            return Task.FromResult<McpResponse>(new McpErrorResponse
+            return new McpErrorResponse
             {
                 Error = new McpError
                 {
-                    Code = "GET_THREADS_FAILED",
+                    Code = DebugErrorCodes.GET_THREADS_FAILED,
                     Message = ex.Message
                 }
-            });
+            };
         }
     }
 
@@ -114,7 +111,7 @@ public class DebugThreadTool : IDebugThreadTool
                 {
                     Error = new McpError
                     {
-                        Code = "NO_DEBUG_SESSION",
+                        Code = DebugErrorCodes.NO_DEBUG_SESSION,
                         Message = "No active debug session. Use debug.attach() or debug.launch() first."
                     }
                 };
@@ -138,7 +135,7 @@ public class DebugThreadTool : IDebugThreadTool
             {
                 Error = new McpError
                 {
-                    Code = "SELECT_THREAD_FAILED",
+                    Code = DebugErrorCodes.SELECT_THREAD_FAILED,
                     Message = ex.Message
                 }
             };
@@ -149,6 +146,7 @@ public class DebugThreadTool : IDebugThreadTool
 /// <summary>
 /// Handles debug status queries
 /// </summary>
+[McpMethod("debug.getStatus", typeof(DebugGetStatusRequest), "Get current debug session status", "debug", "status")]
 public class DebugStatusTool : IDebugStatusTool
 {
     private readonly ILogger<DebugStatusTool> _logger;
@@ -162,6 +160,11 @@ public class DebugStatusTool : IDebugStatusTool
         _debugBridge = debugBridge ?? throw new ArgumentNullException(nameof(debugBridge));
     }
 
+    public bool CanHandle(string method)
+    {
+        return method.StartsWith("debug.getStatus");
+    }
+
     public async Task<McpResponse> HandleAsync(McpRequest request)
     {
         return request.Method switch
@@ -171,7 +174,7 @@ public class DebugStatusTool : IDebugStatusTool
             {
                 Error = new McpError
                 {
-                    Code = "METHOD_NOT_SUPPORTED",
+                    Code = DebugErrorCodes.METHOD_NOT_FOUND,
                     Message = $"Method {request.Method} not supported by DebugStatusTool"
                 }
             }
@@ -206,7 +209,7 @@ public class DebugStatusTool : IDebugStatusTool
             {
                 Error = new McpError
                 {
-                    Code = "GET_STATUS_FAILED",
+                    Code = DebugErrorCodes.GET_STATUS_FAILED,
                     Message = ex.Message
                 }
             });

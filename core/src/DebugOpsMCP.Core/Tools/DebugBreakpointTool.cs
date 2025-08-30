@@ -26,6 +26,11 @@ public class DebugBreakpointTool : IDebugBreakpointTool
         _debugBridge = debugBridge ?? throw new ArgumentNullException(nameof(debugBridge));
     }
 
+    public bool CanHandle(string method)
+    {
+        return method.StartsWith("debug.setBreakpoint") || method.StartsWith("debug.removeBreakpoint") || method.StartsWith("debug.listBreakpoints");
+    }
+
     public Task<McpResponse> HandleAsync(McpRequest request)
     {
         return request.Method switch
@@ -37,7 +42,7 @@ public class DebugBreakpointTool : IDebugBreakpointTool
             {
                 Error = new McpError
                 {
-                    Code = "METHOD_NOT_SUPPORTED",
+                    Code = DebugErrorCodes.METHOD_NOT_FOUND,
                     Message = $"Method {request.Method} not supported by DebugBreakpointTool"
                 }
             })
@@ -57,7 +62,7 @@ public class DebugBreakpointTool : IDebugBreakpointTool
                 {
                     Error = new McpError
                     {
-                        Code = "NO_DEBUG_SESSION",
+                        Code = DebugErrorCodes.NO_DEBUG_SESSION,
                         Message = "No active debug session. Use debug.attach() or debug.launch() first."
                     }
                 };
@@ -113,7 +118,7 @@ public class DebugBreakpointTool : IDebugBreakpointTool
             {
                 Error = new McpError
                 {
-                    Code = "BREAKPOINT_SET_FAILED",
+                    Code = DebugErrorCodes.BREAKPOINT_SET_FAILED,
                     Message = ex.Message
                 }
             };
@@ -132,7 +137,7 @@ public class DebugBreakpointTool : IDebugBreakpointTool
                 {
                     Error = new McpError
                     {
-                        Code = "BREAKPOINT_NOT_FOUND",
+                        Code = DebugErrorCodes.BREAKPOINT_NOT_FOUND,
                         Message = $"Breakpoint {request.BreakpointId} not found"
                     }
                 };
@@ -174,7 +179,7 @@ public class DebugBreakpointTool : IDebugBreakpointTool
             {
                 Error = new McpError
                 {
-                    Code = "BREAKPOINT_REMOVE_FAILED",
+                    Code = DebugErrorCodes.BREAKPOINT_REMOVE_FAILED,
                     Message = ex.Message
                 }
             };
@@ -201,7 +206,7 @@ public class DebugBreakpointTool : IDebugBreakpointTool
             {
                 Error = new McpError
                 {
-                    Code = "BREAKPOINT_LIST_FAILED",
+                    Code = DebugErrorCodes.BREAKPOINT_LIST_FAILED,
                     Message = ex.Message
                 }
             });

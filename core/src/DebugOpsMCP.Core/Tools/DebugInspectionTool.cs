@@ -1,6 +1,7 @@
 using DebugOpsMCP.Contracts;
 using DebugOpsMCP.Contracts.Debug;
 using DebugOpsMCP.Core.Debug;
+using DebugOpsMCP.Core.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace DebugOpsMCP.Core.Tools;
@@ -8,6 +9,9 @@ namespace DebugOpsMCP.Core.Tools;
 /// <summary>
 /// Handles debug inspection operations (stack trace, variables, evaluation)
 /// </summary>
+[McpMethod("debug.getStackTrace", typeof(DebugGetStackTraceRequest), "Get current call stack", "debug", "inspection")]
+[McpMethod("debug.getVariables", typeof(DebugGetVariablesRequest), "Get variables in scope", "debug", "inspection")]
+[McpMethod("debug.evaluate", typeof(DebugEvaluateRequest), "Evaluate expressions", "debug", "inspection")]
 public class DebugInspectionTool : IDebugInspectionTool
 {
     private readonly ILogger<DebugInspectionTool> _logger;
@@ -21,6 +25,11 @@ public class DebugInspectionTool : IDebugInspectionTool
         _debugBridge = debugBridge ?? throw new ArgumentNullException(nameof(debugBridge));
     }
 
+    public bool CanHandle(string method)
+    {
+        return method.StartsWith("debug.getStackTrace") || method.StartsWith("debug.getVariables") || method.StartsWith("debug.evaluate");
+    }
+
     public async Task<McpResponse> HandleAsync(McpRequest request)
     {
         return request.Method switch
@@ -32,14 +41,14 @@ public class DebugInspectionTool : IDebugInspectionTool
             {
                 Error = new McpError
                 {
-                    Code = "METHOD_NOT_SUPPORTED",
+                    Code = DebugErrorCodes.METHOD_NOT_FOUND,
                     Message = $"Method {request.Method} not supported by DebugInspectionTool"
                 }
             }
         };
     }
 
-    private Task<McpResponse> HandleGetStackTraceAsync(DebugGetStackTraceRequest request)
+    private async Task<McpResponse> HandleGetStackTraceAsync(DebugGetStackTraceRequest request)
     {
         try
         {
@@ -47,73 +56,70 @@ public class DebugInspectionTool : IDebugInspectionTool
 
             if (!_debugBridge.IsConnected)
             {
-                return Task.FromResult<McpResponse>(new McpErrorResponse
+                return new McpErrorResponse
                 {
                     Error = new McpError
                     {
-                        Code = "NO_DEBUG_SESSION",
+                        Code = DebugErrorCodes.NO_DEBUG_SESSION,
                         Message = "No active debug session. Use debug.attach() or debug.launch() first."
                     }
-                });
+                };
             }
 
-            // TODO: Send actual DAP stackTrace request
-            // For now, return mock stack trace
-            var mockStackTrace = new DebugStackTrace
+            // Send actual DAP stackTrace request
+            var dapRequest = new DapStackTraceRequest
             {
-                Frames = new[]
+                Arguments = new DapStackTraceArguments
                 {
-                    new DebugStackFrame
-                    {
-                        Id = "frame1",
-                        Name = "OrderProcessor.CalculateTotal()",
-                        Source = new DebugSource
-                        {
-                            Name = "OrderProcessor.cs",
-                            Path = "C:\\MyApp\\OrderProcessor.cs"
-                        },
-                        Line = 42,
-                        Column = 16
-                    },
-                    new DebugStackFrame
-                    {
-                        Id = "frame2",
-                        Name = "OrderService.ProcessOrder(Order order)",
-                        Source = new DebugSource
-                        {
-                            Name = "OrderService.cs",
-                            Path = "C:\\MyApp\\OrderService.cs"
-                        },
-                        Line = 28,
-                        Column = 12
-                    }
-                },
-                TotalFrames = 2
+                    ThreadId = request.ThreadId ?? 1,
+                    StartFrame = request.StartFrame,
+                    Levels = request.Levels
+                }
             };
 
-            _logger.LogInformation("Stack trace retrieved with {FrameCount} frames", mockStackTrace.Frames.Length);
+            var dapResponse = await _debugBridge.SendRequestAsync<DapStackTraceRequest, DapStackTraceResponse>(dapRequest);
 
-            return Task.FromResult<McpResponse>(new DebugStackTraceResponse
+            // Convert DAP response to our internal format
+            var stackTrace = new DebugStackTrace
+            {
+                Frames = dapResponse.Body?.StackFrames?.Select(f => new DebugStackFrame
+                {
+                    Id = f.Id.ToString(),
+                    Name = f.Name,
+                    Source = f.Source != null ? new DebugSource
+                    {
+                        Name = f.Source.Name,
+                        Path = f.Source.Path,
+                        SourceReference = f.Source.SourceReference
+                    } : null,
+                    Line = f.Line,
+                    Column = f.Column
+                }).ToArray() ?? Array.Empty<DebugStackFrame>()
+            };
+
+            _logger.LogInformation("Stack trace retrieved with {FrameCount} frames", stackTrace.Frames.Length);
+
+            return new DebugStackTraceResponse
             {
                 Success = true,
-                Result = mockStackTrace
-            });
+                Result = stackTrace
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get stack trace");
-            return Task.FromResult<McpResponse>(new McpErrorResponse
+            return new McpErrorResponse
             {
                 Error = new McpError
                 {
-                    Code = "STACK_TRACE_FAILED",
+                    Code = DebugErrorCodes.STACK_TRACE_FAILED,
                     Message = ex.Message
                 }
-            });
+            };
         }
     }
 
-    private Task<McpResponse> HandleGetVariablesAsync(DebugGetVariablesRequest request)
+    private async Task<McpResponse> HandleGetVariablesAsync(DebugGetVariablesRequest request)
     {
         try
         {
@@ -122,66 +128,63 @@ public class DebugInspectionTool : IDebugInspectionTool
 
             if (!_debugBridge.IsConnected)
             {
-                return Task.FromResult<McpResponse>(new McpErrorResponse
+                return new McpErrorResponse
                 {
                     Error = new McpError
                     {
-                        Code = "NO_DEBUG_SESSION",
+                        Code = DebugErrorCodes.NO_DEBUG_SESSION,
                         Message = "No active debug session. Use debug.attach() or debug.launch() first."
                     }
-                });
+                };
             }
 
-            // TODO: Send actual DAP variables request
-            // For now, return mock variables
-            var mockVariables = new[]
+            // Send actual DAP variables request
+            // Note: ScopeId in our request maps to variablesReference in DAP
+            var dapRequest = new DapVariablesRequest
             {
-                new DebugVariable
+                Arguments = new DapVariablesArguments
                 {
-                    Name = "order",
-                    Value = "{OrderId: 123, CustomerId: 456}",
-                    Type = "Order",
-                    VariablesReference = "var1"
-                },
-                new DebugVariable
-                {
-                    Name = "total",
-                    Value = "null",
-                    Type = "decimal?"
-                },
-                new DebugVariable
-                {
-                    Name = "items",
-                    Value = "Count = 3",
-                    Type = "List<OrderItem>",
-                    VariablesReference = "var2",
-                    IndexedVariables = 3
+                    VariablesReference = request.ScopeId != null ? int.Parse(request.ScopeId) : 0,
+                    Filter = request.Filter
                 }
             };
 
-            _logger.LogInformation("Variables retrieved: {VariableCount} variables", mockVariables.Length);
+            var dapResponse = await _debugBridge.SendRequestAsync<DapVariablesRequest, DapVariablesResponse>(dapRequest);
 
-            return Task.FromResult<McpResponse>(new DebugVariablesResponse
+            // Convert DAP response to our internal format
+            var variables = dapResponse.Body?.Variables?.Select(v => new DebugVariable
+            {
+                Name = v.Name,
+                Value = v.Value,
+                Type = v.Type,
+                VariablesReference = v.VariablesReference.ToString(),
+                IndexedVariables = v.IndexedVariables,
+                NamedVariables = v.NamedVariables
+            }).ToArray() ?? Array.Empty<DebugVariable>();
+
+            _logger.LogInformation("Variables retrieved: {VariableCount} variables", variables.Length);
+
+            return new DebugVariablesResponse
             {
                 Success = true,
-                Result = mockVariables
-            });
+                Result = variables
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get variables");
-            return Task.FromResult<McpResponse>(new McpErrorResponse
+            return new McpErrorResponse
             {
                 Error = new McpError
                 {
-                    Code = "VARIABLES_FAILED",
+                    Code = DebugErrorCodes.VARIABLES_FAILED,
                     Message = ex.Message
                 }
-            });
+            };
         }
     }
 
-    private Task<McpResponse> HandleEvaluateAsync(DebugEvaluateRequest request)
+    private async Task<McpResponse> HandleEvaluateAsync(DebugEvaluateRequest request)
     {
         try
         {
@@ -189,63 +192,71 @@ public class DebugInspectionTool : IDebugInspectionTool
 
             if (!_debugBridge.IsConnected)
             {
-                return Task.FromResult<McpResponse>(new McpErrorResponse
+                return new McpErrorResponse
                 {
                     Error = new McpError
                     {
-                        Code = "NO_DEBUG_SESSION",
+                        Code = DebugErrorCodes.NO_DEBUG_SESSION,
                         Message = "No active debug session. Use debug.attach() or debug.launch() first."
                     }
-                });
+                };
             }
 
             if (string.IsNullOrWhiteSpace(request.Expression))
             {
-                return Task.FromResult<McpResponse>(new McpErrorResponse
+                return new McpErrorResponse
                 {
                     Error = new McpError
                     {
-                        Code = "INVALID_EXPRESSION",
+                        Code = DebugErrorCodes.INVALID_PARAMS,
                         Message = "Expression cannot be empty"
                     }
-                });
+                };
             }
 
-            // TODO: Send actual DAP evaluate request
-            // For now, return mock evaluation result
-            var mockResult = new DebugEvaluationResult
+            // Send actual DAP evaluate request
+            var dapRequest = new DapEvaluateRequest
             {
-                Result = request.Expression switch
+                Arguments = new DapEvaluateArguments
                 {
-                    "order" => "{OrderId: 123, CustomerId: 456}",
-                    "order.Items" => "null",
-                    "order.Items?.Count" => "null",
-                    "total" => "null",
-                    _ => $"<evaluation of '{request.Expression}'>"
-                },
-                Type = "object"
+                    Expression = request.Expression,
+                    FrameId = request.FrameId != null ? int.Parse(request.FrameId) : null,
+                    Context = request.Context ?? "repl"
+                }
+            };
+
+            var dapResponse = await _debugBridge.SendRequestAsync<DapEvaluateRequest, DapEvaluateResponse>(dapRequest);
+
+            // Convert DAP response to our internal format
+            var result = new DebugEvaluationResult
+            {
+                Result = dapResponse.Body?.Result ?? "<no result>",
+                Type = dapResponse.Body?.Type,
+                VariablesReference = dapResponse.Body?.VariablesReference.ToString(),
+                IndexedVariables = dapResponse.Body?.IndexedVariables,
+                NamedVariables = dapResponse.Body?.NamedVariables
             };
 
             _logger.LogInformation("Expression evaluated: {Expression} = {Result}",
-                request.Expression, mockResult.Result);
+                request.Expression, result.Result);
 
-            return Task.FromResult<McpResponse>(new DebugEvaluateResponse
+            return new DebugEvaluateResponse
             {
                 Success = true,
-                Result = mockResult
-            });
+                Result = result
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to evaluate expression: {Expression}", request.Expression);
-            return Task.FromResult<McpResponse>(new McpErrorResponse
+            return new McpErrorResponse
             {
                 Error = new McpError
                 {
-                    Code = "EVALUATE_FAILED",
+                    Code = DebugErrorCodes.EVALUATION_FAILED,
                     Message = ex.Message
                 }
-            });
+            };
         }
     }
 }

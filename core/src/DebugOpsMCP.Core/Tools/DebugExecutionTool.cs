@@ -1,6 +1,7 @@
 using DebugOpsMCP.Contracts;
 using DebugOpsMCP.Contracts.Debug;
 using DebugOpsMCP.Core.Debug;
+using DebugOpsMCP.Core.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace DebugOpsMCP.Core.Tools;
@@ -8,6 +9,9 @@ namespace DebugOpsMCP.Core.Tools;
 /// <summary>
 /// Handles debug execution control (continue, pause, step)
 /// </summary>
+[McpMethod("debug.continue", typeof(DebugContinueRequest), "Continue execution from current breakpoint", "debug", "execution")]
+[McpMethod("debug.pause", typeof(DebugPauseRequest), "Pause execution", "debug", "execution")]
+[McpMethod("debug.step", typeof(DebugStepRequest), "Step through code (over/into/out)", "debug", "execution")]
 public class DebugExecutionTool : IDebugExecutionTool
 {
     private readonly ILogger<DebugExecutionTool> _logger;
@@ -21,6 +25,11 @@ public class DebugExecutionTool : IDebugExecutionTool
         _debugBridge = debugBridge ?? throw new ArgumentNullException(nameof(debugBridge));
     }
 
+    public bool CanHandle(string method)
+    {
+        return method.StartsWith("debug.continue") || method.StartsWith("debug.pause") || method.StartsWith("debug.step");
+    }
+
     public async Task<McpResponse> HandleAsync(McpRequest request)
     {
         return request.Method switch
@@ -32,7 +41,7 @@ public class DebugExecutionTool : IDebugExecutionTool
             {
                 Error = new McpError
                 {
-                    Code = "METHOD_NOT_SUPPORTED",
+                    Code = DebugErrorCodes.METHOD_NOT_FOUND,
                     Message = $"Method {request.Method} not supported by DebugExecutionTool"
                 }
             }
@@ -57,15 +66,25 @@ public class DebugExecutionTool : IDebugExecutionTool
                 };
             }
 
-            // TODO: Send actual DAP continue request
-            await Task.Delay(50); // Simulate DAP request time
+            // Send actual DAP continue request
+            var dapRequest = new DapContinueRequest
+            {
+                Arguments = new DapContinueArguments
+                {
+                    ThreadId = request.ThreadId ?? 1
+                }
+            };
 
-            _logger.LogInformation("Execution continued successfully");
+            var dapResponse = await _debugBridge.SendRequestAsync<DapContinueRequest, DapContinueResponse>(dapRequest);
+
+            _logger.LogInformation("Execution continued successfully on thread {ThreadId}", request.ThreadId);
 
             return new McpResponse<string>
             {
                 Success = true,
-                Result = "Execution continued"
+                Result = dapResponse.Body?.AllThreadsContinued == true 
+                    ? "All threads continued" 
+                    : $"Thread {request.ThreadId} continued"
             };
         }
         catch (Exception ex)
@@ -75,7 +94,7 @@ public class DebugExecutionTool : IDebugExecutionTool
             {
                 Error = new McpError
                 {
-                    Code = "CONTINUE_FAILED",
+                    Code = DebugErrorCodes.CONTINUE_FAILED,
                     Message = ex.Message
                 }
             };
@@ -100,15 +119,23 @@ public class DebugExecutionTool : IDebugExecutionTool
                 };
             }
 
-            // TODO: Send actual DAP pause request
-            await Task.Delay(50); // Simulate DAP request time
+            // Send actual DAP pause request
+            var dapRequest = new DapPauseRequest
+            {
+                Arguments = new DapPauseArguments
+                {
+                    ThreadId = request.ThreadId ?? 1
+                }
+            };
 
-            _logger.LogInformation("Execution paused successfully");
+            var dapResponse = await _debugBridge.SendRequestAsync<DapPauseRequest, DapPauseResponse>(dapRequest);
+
+            _logger.LogInformation("Execution paused successfully on thread {ThreadId}", request.ThreadId);
 
             return new McpResponse<string>
             {
                 Success = true,
-                Result = "Execution paused"
+                Result = $"Thread {request.ThreadId} paused"
             };
         }
         catch (Exception ex)
@@ -118,7 +145,7 @@ public class DebugExecutionTool : IDebugExecutionTool
             {
                 Error = new McpError
                 {
-                    Code = "PAUSE_FAILED",
+                    Code = DebugErrorCodes.EXECUTION_FAILED,
                     Message = ex.Message
                 }
             };
@@ -151,21 +178,43 @@ public class DebugExecutionTool : IDebugExecutionTool
                 {
                     Error = new McpError
                     {
-                        Code = "INVALID_STEP_TYPE",
-                        Message = $"Invalid step type: {request.StepType}. Valid types: over, into, out"
+                        Code = DebugErrorCodes.INVALID_PARAMS,
+                        Message = $"Invalid step type: {request.StepType}. Valid types: over, into, out, back"
                     }
                 };
             }
 
-            // TODO: Send appropriate DAP step request based on stepType
-            await Task.Delay(50); // Simulate DAP request time
+            // Send appropriate DAP step request based on stepType
+            DapRequest dapRequest = request.StepType?.ToLowerInvariant() switch
+            {
+                "into" => new DapStepInRequest
+                {
+                    Arguments = new DapStepInArguments { ThreadId = request.ThreadId ?? 1 }
+                },
+                "out" => new DapStepOutRequest
+                {
+                    Arguments = new DapStepOutArguments { ThreadId = request.ThreadId ?? 1 }
+                },
+                "over" or _ => new DapNextRequest
+                {
+                    Arguments = new DapNextArguments { ThreadId = request.ThreadId ?? 1 }
+                }
+            };
 
-            _logger.LogInformation("Step {StepType} completed successfully", request.StepType);
+            // Send the appropriate request and await response
+            DapResponse dapResponse = request.StepType?.ToLowerInvariant() switch
+            {
+                "into" => await _debugBridge.SendRequestAsync<DapStepInRequest, DapStepInResponse>((DapStepInRequest)dapRequest),
+                "out" => await _debugBridge.SendRequestAsync<DapStepOutRequest, DapStepOutResponse>((DapStepOutRequest)dapRequest),
+                "over" or _ => await _debugBridge.SendRequestAsync<DapNextRequest, DapNextResponse>((DapNextRequest)dapRequest)
+            };
+
+            _logger.LogInformation("Step {StepType} completed successfully on thread {ThreadId}", request.StepType, request.ThreadId);
 
             return new McpResponse<string>
             {
                 Success = true,
-                Result = $"Step {request.StepType} completed"
+                Result = $"Step {request.StepType} completed on thread {request.ThreadId}"
             };
         }
         catch (Exception ex)
@@ -175,7 +224,7 @@ public class DebugExecutionTool : IDebugExecutionTool
             {
                 Error = new McpError
                 {
-                    Code = "STEP_FAILED",
+                    Code = DebugErrorCodes.STEP_FAILED,
                     Message = ex.Message
                 }
             };
@@ -186,7 +235,7 @@ public class DebugExecutionTool : IDebugExecutionTool
     {
         return stepType switch
         {
-            "over" or "into" or "out" => true,
+            "over" or "into" or "out" or "back" => true,
             _ => false
         };
     }

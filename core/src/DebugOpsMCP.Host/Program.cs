@@ -62,6 +62,7 @@ class Program
                 // Register core services
                 services.AddSingleton<McpHost>();
                 services.AddSingleton<IDebugBridge, ExtensionMediatedDebugBridge>();
+                services.AddSingleton<IMcpToolRegistry, McpToolRegistry>();
 
                 // Register debug tools
                 services.AddSingleton<IDebugLifecycleTool, DebugLifecycleTool>();

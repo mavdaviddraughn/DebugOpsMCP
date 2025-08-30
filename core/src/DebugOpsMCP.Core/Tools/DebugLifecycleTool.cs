@@ -26,6 +26,12 @@ public class DebugLifecycleTool : IDebugLifecycleTool
         _debugBridge = debugBridge ?? throw new ArgumentNullException(nameof(debugBridge));
     }
 
+    public bool CanHandle(string method)
+    {
+        return method.StartsWith("debug.attach") || method.StartsWith("debug.launch") || 
+               method.StartsWith("debug.disconnect") || method.StartsWith("debug.terminate");
+    }
+
     public async Task<McpResponse> HandleAsync(McpRequest request)
     {
         return request.Method switch
@@ -38,7 +44,7 @@ public class DebugLifecycleTool : IDebugLifecycleTool
             {
                 Error = new McpError
                 {
-                    Code = "METHOD_NOT_SUPPORTED",
+                    Code = DebugErrorCodes.METHOD_NOT_FOUND,
                     Message = $"Method {request.Method} not supported by DebugLifecycleTool"
                 }
             }
@@ -108,7 +114,7 @@ public class DebugLifecycleTool : IDebugLifecycleTool
             {
                 Error = new McpError
                 {
-                    Code = "ATTACH_FAILED",
+                    Code = DebugErrorCodes.ATTACHMENT_FAILED,
                     Message = ex.Message
                 }
             };
@@ -174,7 +180,7 @@ public class DebugLifecycleTool : IDebugLifecycleTool
             {
                 Error = new McpError
                 {
-                    Code = "LAUNCH_FAILED",
+                    Code = DebugErrorCodes.LAUNCH_FAILED,
                     Message = ex.Message
                 }
             };
@@ -187,24 +193,49 @@ public class DebugLifecycleTool : IDebugLifecycleTool
         {
             _logger.LogInformation("Disconnecting debug session");
 
-            // Send disconnect request through debug bridge
-            var disconnectRequest = new { action = "disconnect" };
-            var bridgeResponse = await _debugBridge.SendRequestAsync<object, McpResponse<string>>(disconnectRequest);
-
-            if (bridgeResponse.Success)
-            {
-                _logger.LogInformation("Debug session disconnected successfully");
-                return bridgeResponse;
-            }
-            else
+            if (!_debugBridge.IsConnected)
             {
                 return new McpErrorResponse
                 {
                     Error = new McpError
                     {
-                        Code = "DISCONNECT_FAILED",
-                        Message = "Debug bridge disconnect request failed"
+                        Code = DebugErrorCodes.NO_DEBUG_SESSION,
+                        Message = "No active debug session to disconnect."
                     }
+                };
+            }
+
+            // Send disconnect request through debug bridge
+            var disconnectRequest = new DebugDisconnectRequest();
+            
+            try
+            {
+                var bridgeResponse = await _debugBridge.SendRequestAsync<McpRequest, McpResponse<string>>(disconnectRequest);
+
+                if (bridgeResponse?.Success == true)
+                {
+                    _logger.LogInformation("Debug session disconnected successfully");
+                    return bridgeResponse;
+                }
+                else
+                {
+                    return new McpErrorResponse
+                    {
+                        Error = new McpError
+                        {
+                            Code = DebugErrorCodes.SESSION_NOT_FOUND,
+                            Message = "Debug bridge disconnect request failed"
+                        }
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Bridge disconnect failed, assuming session ended");
+                return new McpResponse<string>
+                {
+                    Success = true,
+                    Result = "disconnected"
                 };
             }
         }
@@ -215,7 +246,7 @@ public class DebugLifecycleTool : IDebugLifecycleTool
             {
                 Error = new McpError
                 {
-                    Code = "DISCONNECT_FAILED",
+                    Code = DebugErrorCodes.SESSION_NOT_FOUND,
                     Message = ex.Message
                 }
             };
@@ -228,24 +259,49 @@ public class DebugLifecycleTool : IDebugLifecycleTool
         {
             _logger.LogInformation("Terminating debug session");
 
-            // Send terminate request through debug bridge
-            var terminateRequest = new { action = "terminate" };
-            var bridgeResponse = await _debugBridge.SendRequestAsync<object, McpResponse<string>>(terminateRequest);
-
-            if (bridgeResponse.Success)
-            {
-                _logger.LogInformation("Debug session terminated successfully");
-                return bridgeResponse;
-            }
-            else
+            if (!_debugBridge.IsConnected)
             {
                 return new McpErrorResponse
                 {
                     Error = new McpError
                     {
-                        Code = "TERMINATE_FAILED",
-                        Message = "Debug bridge terminate request failed"
+                        Code = DebugErrorCodes.NO_DEBUG_SESSION,
+                        Message = "No active debug session to terminate."
                     }
+                };
+            }
+
+            // Send terminate request through debug bridge
+            var terminateRequest = new DebugTerminateRequest();
+            
+            try
+            {
+                var bridgeResponse = await _debugBridge.SendRequestAsync<DebugTerminateRequest, McpResponse<string>>(terminateRequest);
+
+                if (bridgeResponse?.Success == true)
+                {
+                    _logger.LogInformation("Debug session terminated successfully");
+                    return bridgeResponse;
+                }
+                else
+                {
+                    return new McpErrorResponse
+                    {
+                        Error = new McpError
+                        {
+                            Code = DebugErrorCodes.SESSION_NOT_FOUND,
+                            Message = "Debug bridge terminate request failed"
+                        }
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Bridge terminate failed, assuming session ended");
+                return new McpResponse<string>
+                {
+                    Success = true,
+                    Result = "terminated"
                 };
             }
         }
@@ -256,7 +312,7 @@ public class DebugLifecycleTool : IDebugLifecycleTool
             {
                 Error = new McpError
                 {
-                    Code = "TERMINATE_FAILED",
+                    Code = DebugErrorCodes.SESSION_NOT_FOUND,
                     Message = ex.Message
                 }
             };

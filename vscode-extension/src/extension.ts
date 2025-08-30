@@ -52,10 +52,10 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate(): Thenable<void> | undefined {
     console.log('DebugOpsMCP extension is deactivating...');
-    
+
     if (mcpClient) {
         return mcpClient.stop();
     }
-    
+
     return undefined;
 }

@@ -24,11 +24,11 @@ public class DebugBreakpointToolTests
     public async Task HandleSetBreakpointAsync_WhenNotConnected_ReturnsNoSessionError()
     {
         // Arrange
-        var request = new DebugSetBreakpointRequest 
-        { 
+        var request = new DebugSetBreakpointRequest
+        {
             Method = "debug.setBreakpoint",
-            File = "test.cs", 
-            Line = 10 
+            File = "test.cs",
+            Line = 10
         };
         _debugBridgeMock.Setup(x => x.IsConnected).Returns(false);
 
@@ -46,10 +46,10 @@ public class DebugBreakpointToolTests
     public async Task HandleSetBreakpointAsync_WhenConnected_ReturnsBreakpoint()
     {
         // Arrange
-        var request = new DebugSetBreakpointRequest 
-        { 
+        var request = new DebugSetBreakpointRequest
+        {
             Method = "debug.setBreakpoint",
-            File = "test.cs", 
+            File = "test.cs",
             Line = 10,
             Condition = "x > 5"
         };
@@ -61,7 +61,7 @@ public class DebugBreakpointToolTests
         // Assert
         Assert.NotNull(response);
         Assert.True(response.Success);
-        
+
         var breakpointResponse = Assert.IsType<DebugBreakpointResponse>(response);
         Assert.NotNull(breakpointResponse.Result);
         Assert.Equal("test.cs", breakpointResponse.Result.File);
@@ -74,10 +74,10 @@ public class DebugBreakpointToolTests
     public async Task HandleRemoveBreakpointAsync_NonExistentBreakpoint_ReturnsNotFoundError()
     {
         // Arrange
-        var request = new DebugRemoveBreakpointRequest 
-        { 
+        var request = new DebugRemoveBreakpointRequest
+        {
             Method = "debug.removeBreakpoint",
-            BreakpointId = "nonexistent" 
+            BreakpointId = "nonexistent"
         };
         _debugBridgeMock.Setup(x => x.IsConnected).Returns(true);
 
@@ -95,16 +95,16 @@ public class DebugBreakpointToolTests
     public async Task HandleListBreakpointsAsync_ReturnsAllBreakpoints()
     {
         // Arrange - First set a breakpoint
-        var setRequest = new DebugSetBreakpointRequest 
-        { 
+        var setRequest = new DebugSetBreakpointRequest
+        {
             Method = "debug.setBreakpoint",
-            File = "test.cs", 
-            Line = 10 
+            File = "test.cs",
+            Line = 10
         };
         _debugBridgeMock.Setup(x => x.IsConnected).Returns(true);
-        
+
         await _tool.HandleAsync(setRequest);
-        
+
         var listRequest = new DebugListBreakpointsRequest() { Method = "debug.listBreakpoints" };
 
         // Act
@@ -113,7 +113,7 @@ public class DebugBreakpointToolTests
         // Assert
         Assert.NotNull(response);
         Assert.True(response.Success);
-        
+
         var breakpointsResponse = Assert.IsType<DebugBreakpointsResponse>(response);
         Assert.NotNull(breakpointsResponse.Result);
         Assert.Single(breakpointsResponse.Result);

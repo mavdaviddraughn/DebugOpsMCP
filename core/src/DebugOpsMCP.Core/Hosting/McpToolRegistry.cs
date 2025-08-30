@@ -90,7 +90,7 @@ public class McpToolRegistry : IMcpToolRegistry
         {
             // Discover tools by scanning assemblies
             var toolTypes = DiscoverToolTypes();
-            
+
             foreach (var toolType in toolTypes)
             {
                 RegisterToolType(toolType);
@@ -99,7 +99,7 @@ public class McpToolRegistry : IMcpToolRegistry
             // Register built-in health check
             RegisterBuiltInMethods();
 
-            _logger.LogInformation("MCP tool registration completed. Registered {Count} methods: {Methods}", 
+            _logger.LogInformation("MCP tool registration completed. Registered {Count} methods: {Methods}",
                 _tools.Count, string.Join(", ", _tools.Keys));
         }
         catch (Exception ex)
@@ -140,9 +140,9 @@ public class McpToolRegistry : IMcpToolRegistry
     {
         var assembly = Assembly.GetExecutingAssembly();
         return assembly.GetTypes()
-            .Where(type => 
-                typeof(IDebugTool).IsAssignableFrom(type) && 
-                !type.IsInterface && 
+            .Where(type =>
+                typeof(IDebugTool).IsAssignableFrom(type) &&
+                !type.IsInterface &&
                 !type.IsAbstract &&
                 type.GetCustomAttributes<McpMethodAttribute>().Any());
     }
@@ -150,7 +150,7 @@ public class McpToolRegistry : IMcpToolRegistry
     private void RegisterToolType(Type toolType)
     {
         var methodAttributes = toolType.GetCustomAttributes<McpMethodAttribute>();
-        
+
         foreach (var methodAttr in methodAttributes)
         {
             try
@@ -167,7 +167,7 @@ public class McpToolRegistry : IMcpToolRegistry
 
                 if (_tools.TryAdd(methodAttr.Method, registration))
                 {
-                    _logger.LogDebug("Registered tool {ToolType} for method {Method}", 
+                    _logger.LogDebug("Registered tool {ToolType} for method {Method}",
                         toolType.Name, methodAttr.Method);
                 }
                 else
@@ -177,7 +177,7 @@ public class McpToolRegistry : IMcpToolRegistry
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to register method {Method} for tool {ToolType}", 
+                _logger.LogError(ex, "Failed to register method {Method} for tool {ToolType}",
                     methodAttr.Method, toolType.Name);
             }
         }
@@ -225,14 +225,14 @@ public class HealthCheckTool : IDebugTool
         _logger = logger;
     }
 
-    public async Task<McpResponse> HandleRequestAsync(McpRequest request)
+    public async Task<McpResponse> HandleAsync(McpRequest request)
     {
         _logger.LogInformation("Health check requested");
-        
+
         return await Task.FromResult(new McpResponse<string>
         {
             Success = true,
-            Data = "DebugOpsMCP server is running"
+            Result = "DebugOpsMCP server is running"
         });
     }
 

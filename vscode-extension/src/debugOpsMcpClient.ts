@@ -217,18 +217,18 @@ export class DebugOpsMcpClient {
         // Auto-detect server path using multiple fallback strategies
         const extensionPath = this.context.extensionPath;
         const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        
+
         const candidatePaths: { path: string; description: string }[] = [
             // Development build paths (relative to extension)
-            { 
+            {
                 path: path.resolve(extensionPath, '..', 'core', 'src', 'DebugOpsMCP.Host', 'bin', 'Debug', 'net8.0', 'DebugOpsMCP.Host.dll'),
-                description: 'Development Debug build' 
+                description: 'Development Debug build'
             },
-            { 
+            {
                 path: path.resolve(extensionPath, '..', 'core', 'src', 'DebugOpsMCP.Host', 'bin', 'Release', 'net8.0', 'DebugOpsMCP.Host.dll'),
-                description: 'Development Release build' 
+                description: 'Development Release build'
             },
-            
+
             // Workspace-relative paths (if opened in workspace)
             ...(workspacePath ? [
                 {
@@ -240,21 +240,21 @@ export class DebugOpsMcpClient {
                     description: 'Workspace Release build'
                 },
             ] : []),
-            
+
             // Published/packaged paths
-            { 
+            {
                 path: path.join(extensionPath, 'server', 'DebugOpsMCP.Host.dll'),
-                description: 'Packaged server' 
+                description: 'Packaged server'
             },
-            { 
+            {
                 path: path.join(extensionPath, 'DebugOpsMCP.Host.dll'),
-                description: 'Extension directory' 
+                description: 'Extension directory'
             },
-            
+
             // Global installation paths
-            { 
+            {
                 path: path.join(process.env.APPDATA || '', 'DebugOpsMCP', 'DebugOpsMCP.Host.dll'),
-                description: 'Global AppData installation' 
+                description: 'Global AppData installation'
             },
         ];
 
@@ -302,7 +302,7 @@ export class DebugOpsMcpClient {
         this.serverProcess.stdout?.on('data', (data) => {
             const output = data.toString();
             const lines = output.split('\n').filter((line: string) => line.trim());
-            
+
             for (const line of lines) {
                 try {
                     const message: DebugBridgeMessage = JSON.parse(line);
@@ -340,7 +340,7 @@ export class DebugOpsMcpClient {
             if (pending) {
                 clearTimeout(pending.timeout);
                 this.pendingRequests.delete(message.id);
-                
+
                 if (message.error) {
                     pending.reject(new Error(message.error));
                 } else {
@@ -367,7 +367,7 @@ export class DebugOpsMcpClient {
         if (!this.serverProcess?.stdin) {
             throw new Error('Server process not available');
         }
-        
+
         const json = JSON.stringify(message);
         this.serverProcess.stdin.write(json + '\n');
     }
@@ -379,7 +379,7 @@ export class DebugOpsMcpClient {
             data,
             timestamp: new Date().toISOString()
         };
-        
+
         this.sendMessage(response);
     }
 
@@ -390,7 +390,7 @@ export class DebugOpsMcpClient {
             error,
             timestamp: new Date().toISOString()
         };
-        
+
         this.sendMessage(response);
     }
 
@@ -413,7 +413,7 @@ export class DebugOpsMcpClient {
             // Start debug session
             const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
             const success = await vscode.debug.startDebugging(workspaceFolder, debugConfig);
-            
+
             if (success) {
                 const activeSession = vscode.debug.activeDebugSession;
                 return {
@@ -435,7 +435,7 @@ export class DebugOpsMcpClient {
         try {
             const sessionId = data?.sessionId;
             let targetSession: vscode.DebugSession | undefined;
-            
+
             if (sessionId) {
                 // Find specific session by ID
                 targetSession = this.debugSessions.get(sessionId);
@@ -452,7 +452,7 @@ export class DebugOpsMcpClient {
 
             // Stop the debug session
             await vscode.debug.stopDebugging(targetSession);
-            
+
             return {
                 success: true,
                 sessionId: targetSession.id,
@@ -484,7 +484,7 @@ export class DebugOpsMcpClient {
             // Start debug session
             const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
             const success = await vscode.debug.startDebugging(workspaceFolder, debugConfig);
-            
+
             if (success) {
                 const activeSession = vscode.debug.activeDebugSession;
                 return {
@@ -510,15 +510,15 @@ export class DebugOpsMcpClient {
 
             const uri = vscode.Uri.file(data.file);
             const line = parseInt(data.line) - 1; // VS Code uses 0-based line numbers
-            
+
             // Create breakpoint
             const location = new vscode.Location(uri, new vscode.Position(line, 0));
             const breakpoint = new vscode.SourceBreakpoint(location, true);
-            
+
             // Add breakpoint to VS Code
             const existingBreakpoints = vscode.debug.breakpoints;
             vscode.debug.addBreakpoints([breakpoint]);
-            
+
             return {
                 success: true,
                 id: `bp_${Date.now()}`, // Generate unique ID
@@ -542,17 +542,17 @@ export class DebugOpsMcpClient {
 
             const uri = vscode.Uri.file(data.file);
             const line = parseInt(data.line) - 1; // VS Code uses 0-based line numbers
-            
+
             // Find and remove matching breakpoints
             const existingBreakpoints = vscode.debug.breakpoints;
             const toRemove = existingBreakpoints.filter(bp => {
                 if (bp instanceof vscode.SourceBreakpoint) {
-                    return bp.location.uri.fsPath === uri.fsPath && 
-                           bp.location.range.start.line === line;
+                    return bp.location.uri.fsPath === uri.fsPath &&
+                        bp.location.range.start.line === line;
                 }
                 return false;
             });
-            
+
             if (toRemove.length > 0) {
                 vscode.debug.removeBreakpoints(toRemove);
                 return {
@@ -582,7 +582,7 @@ export class DebugOpsMcpClient {
             await session.customRequest('continue', {
                 threadId: data?.threadId || 1 // Default to thread 1 if not specified
             });
-            
+
             return {
                 success: true,
                 sessionId: session.id,
@@ -603,7 +603,7 @@ export class DebugOpsMcpClient {
 
             const stepType = data?.stepType || 'over';
             const threadId = data?.threadId || 1;
-            
+
             // Map step types to DAP commands
             let command: string;
             switch (stepType.toLowerCase()) {
@@ -624,7 +624,7 @@ export class DebugOpsMcpClient {
 
             // Send step request to debug adapter
             await session.customRequest(command, { threadId });
-            
+
             return {
                 success: true,
                 sessionId: session.id,
@@ -645,12 +645,12 @@ export class DebugOpsMcpClient {
             }
 
             const variablesReference = data?.variablesReference || 0;
-            
+
             // Send variables request to debug adapter
             const response = await session.customRequest('variables', {
                 variablesReference
             });
-            
+
             return {
                 success: true,
                 variables: response?.body?.variables || [],
@@ -673,10 +673,10 @@ export class DebugOpsMcpClient {
             if (!session) {
                 throw new Error('No active debug session for threads operation');
             }
-            
+
             // Send threads request to debug adapter
             const response = await session.customRequest('threads');
-            
+
             return {
                 success: true,
                 threads: response?.body?.threads || [],
@@ -703,14 +703,14 @@ export class DebugOpsMcpClient {
             const threadId = data?.threadId || 1;
             const startFrame = data?.startFrame || 0;
             const levels = data?.levels || 20;
-            
+
             // Send stackTrace request to debug adapter
             const response = await session.customRequest('stackTrace', {
                 threadId,
                 startFrame,
                 levels
             });
-            
+
             return {
                 success: true,
                 stackFrames: response?.body?.stackFrames || [],
@@ -734,7 +734,7 @@ export class DebugOpsMcpClient {
         vscode.debug.onDidStartDebugSession((session) => {
             this.debugSessions.set(session.id, session);
             this.outputChannel.appendLine(`Debug session started: ${session.name} (${session.type})`);
-            
+
             // Notify the server about the debug session
             this.sendDebugEvent('debugSessionStarted', {
                 sessionId: session.id,
@@ -746,7 +746,7 @@ export class DebugOpsMcpClient {
         vscode.debug.onDidTerminateDebugSession((session) => {
             this.debugSessions.delete(session.id);
             this.outputChannel.appendLine(`Debug session terminated: ${session.name}`);
-            
+
             // Notify the server about the session termination
             this.sendDebugEvent('debugSessionTerminated', {
                 sessionId: session.id,
@@ -759,7 +759,7 @@ export class DebugOpsMcpClient {
         if (!this.status.isRunning) {
             return;
         }
-        
+
         const event: DebugBridgeMessage = {
             id: this.generateId(),
             type: 'event',
@@ -767,7 +767,7 @@ export class DebugOpsMcpClient {
             data,
             timestamp: new Date().toISOString()
         };
-        
+
         try {
             this.sendMessage(event);
         } catch (error) {
@@ -778,8 +778,8 @@ export class DebugOpsMcpClient {
     private getTargetDebugSession(sessionId?: string): vscode.DebugSession | undefined {
         if (sessionId) {
             // Find specific session by ID
-            return this.debugSessions.get(sessionId) || 
-                   [...this.debugSessions.values()].find(s => s.id === sessionId);
+            return this.debugSessions.get(sessionId) ||
+                [...this.debugSessions.values()].find(s => s.id === sessionId);
         } else {
             // Use active debug session
             return vscode.debug.activeDebugSession;

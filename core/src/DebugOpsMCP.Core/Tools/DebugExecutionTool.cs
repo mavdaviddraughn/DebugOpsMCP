@@ -129,7 +129,7 @@ public class DebugExecutionTool : IDebugExecutionTool
     {
         try
         {
-            _logger.LogInformation("Stepping {StepType} for thread {ThreadId}", 
+            _logger.LogInformation("Stepping {StepType} for thread {ThreadId}",
                 request.StepType, request.ThreadId);
 
             if (!_debugBridge.IsConnected)

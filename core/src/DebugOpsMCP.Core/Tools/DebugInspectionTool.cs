@@ -47,14 +47,14 @@ public class DebugInspectionTool : IDebugInspectionTool
 
             if (!_debugBridge.IsConnected)
             {
-                return new McpErrorResponse
+                return Task.FromResult<McpResponse>(new McpErrorResponse
                 {
                     Error = new McpError
                     {
                         Code = "NO_DEBUG_SESSION",
                         Message = "No active debug session. Use debug.attach() or debug.launch() first."
                     }
-                };
+                });
             }
 
             // TODO: Send actual DAP stackTrace request
@@ -93,23 +93,23 @@ public class DebugInspectionTool : IDebugInspectionTool
 
             _logger.LogInformation("Stack trace retrieved with {FrameCount} frames", mockStackTrace.Frames.Length);
 
-            return new DebugStackTraceResponse
+            return Task.FromResult<McpResponse>(new DebugStackTraceResponse
             {
                 Success = true,
                 Result = mockStackTrace
-            };
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get stack trace");
-            return new McpErrorResponse
+            return Task.FromResult<McpResponse>(new McpErrorResponse
             {
                 Error = new McpError
                 {
                     Code = "STACK_TRACE_FAILED",
                     Message = ex.Message
                 }
-            };
+            });
         }
     }
 
@@ -117,19 +117,19 @@ public class DebugInspectionTool : IDebugInspectionTool
     {
         try
         {
-            _logger.LogInformation("Getting variables for scope {ScopeId}, frame {FrameId}", 
+            _logger.LogInformation("Getting variables for scope {ScopeId}, frame {FrameId}",
                 request.ScopeId, request.FrameId);
 
             if (!_debugBridge.IsConnected)
             {
-                return new McpErrorResponse
+                return Task.FromResult<McpResponse>(new McpErrorResponse
                 {
                     Error = new McpError
                     {
                         Code = "NO_DEBUG_SESSION",
                         Message = "No active debug session. Use debug.attach() or debug.launch() first."
                     }
-                };
+                });
             }
 
             // TODO: Send actual DAP variables request
@@ -161,23 +161,23 @@ public class DebugInspectionTool : IDebugInspectionTool
 
             _logger.LogInformation("Variables retrieved: {VariableCount} variables", mockVariables.Length);
 
-            return new DebugVariablesResponse
+            return Task.FromResult<McpResponse>(new DebugVariablesResponse
             {
                 Success = true,
                 Result = mockVariables
-            };
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get variables");
-            return new McpErrorResponse
+            return Task.FromResult<McpResponse>(new McpErrorResponse
             {
                 Error = new McpError
                 {
                     Code = "VARIABLES_FAILED",
                     Message = ex.Message
                 }
-            };
+            });
         }
     }
 
@@ -189,26 +189,26 @@ public class DebugInspectionTool : IDebugInspectionTool
 
             if (!_debugBridge.IsConnected)
             {
-                return new McpErrorResponse
+                return Task.FromResult<McpResponse>(new McpErrorResponse
                 {
                     Error = new McpError
                     {
                         Code = "NO_DEBUG_SESSION",
                         Message = "No active debug session. Use debug.attach() or debug.launch() first."
                     }
-                };
+                });
             }
 
             if (string.IsNullOrWhiteSpace(request.Expression))
             {
-                return new McpErrorResponse
+                return Task.FromResult<McpResponse>(new McpErrorResponse
                 {
                     Error = new McpError
                     {
                         Code = "INVALID_EXPRESSION",
                         Message = "Expression cannot be empty"
                     }
-                };
+                });
             }
 
             // TODO: Send actual DAP evaluate request
@@ -226,26 +226,26 @@ public class DebugInspectionTool : IDebugInspectionTool
                 Type = "object"
             };
 
-            _logger.LogInformation("Expression evaluated: {Expression} = {Result}", 
+            _logger.LogInformation("Expression evaluated: {Expression} = {Result}",
                 request.Expression, mockResult.Result);
 
-            return new DebugEvaluateResponse
+            return Task.FromResult<McpResponse>(new DebugEvaluateResponse
             {
                 Success = true,
                 Result = mockResult
-            };
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to evaluate expression: {Expression}", request.Expression);
-            return new McpErrorResponse
+            return Task.FromResult<McpResponse>(new McpErrorResponse
             {
                 Error = new McpError
                 {
                     Code = "EVALUATE_FAILED",
                     Message = ex.Message
                 }
-            };
+            });
         }
     }
 }

@@ -18,10 +18,21 @@ class Program
     {
         // Configure host and services
         var host = CreateHostBuilder(args).Build();
-        
+
         // Get the MCP host service
         var mcpHost = host.Services.GetRequiredService<McpHost>();
         var logger = host.Services.GetRequiredService<ILogger<Program>>();
+
+        // If the extension-mediated stdio bridge is not enabled, make sure
+        // any Console.Out writes (or libraries that write to stdout) do not
+        // interfere with the MCP protocol which expects JSON-RPC on stdout.
+        // We route Console.Out to stderr in that case; the message loop
+        // writes protocol responses explicitly to stdout.
+        var debugExtEnv = Environment.GetEnvironmentVariable("DEBUG_EXTENSION");
+        if (debugExtEnv != "1")
+        {
+            Console.SetOut(Console.Error);
+        }
 
         logger.LogInformation("DebugOpsMCP server starting...");
 
@@ -51,7 +62,7 @@ class Program
                 // Register core services
                 services.AddSingleton<McpHost>();
                 services.AddSingleton<IDebugBridge, ExtensionMediatedDebugBridge>();
-                
+
                 // Register debug tools
                 services.AddSingleton<IDebugLifecycleTool, DebugLifecycleTool>();
                 services.AddSingleton<IDebugExecutionTool, DebugExecutionTool>();
@@ -59,15 +70,12 @@ class Program
                 services.AddSingleton<IDebugInspectionTool, DebugInspectionTool>();
                 services.AddSingleton<IDebugThreadTool, DebugThreadTool>();
                 services.AddSingleton<IDebugStatusTool, DebugStatusTool>();
-                
-                // Configure logging
+
+                // Configure logging - force console logger to write to stderr so MCP stdout is reserved
                 services.AddLogging(builder =>
                 {
-                    builder.AddConsole();
+                    builder.AddConsole(options => { options.LogToStandardErrorThreshold = LogLevel.Trace; });
                     builder.SetMinimumLevel(LogLevel.Information);
-                    
-                    // In production, we might want to log to file instead of console
-                    // to avoid interfering with MCP stdio communication
                 });
             });
 
@@ -87,14 +95,14 @@ class Program
             {
                 // Process the MCP request
                 var response = await mcpHost.ProcessRequestAsync(line);
-                
+
                 // Write response to stdout
                 await writer.WriteLineAsync(response);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error processing MCP request: {Request}", line);
-                
+
                 // Send error response
                 var errorResponse = """{"success":false,"error":{"code":"PROCESSING_ERROR","message":"Failed to process request"}}""";
                 await writer.WriteLineAsync(errorResponse);

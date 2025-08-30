@@ -9,6 +9,8 @@ public class McpServerIntegrationTests : IAsyncLifetime
 {
     private Process? _serverProcess;
     private readonly string _serverPath;
+    private readonly System.Threading.SemaphoreSlim _stdoutLock = new(1, 1);
+    private readonly System.Threading.SemaphoreSlim _stdinLock = new(1, 1);
 
     public McpServerIntegrationTests()
     {
@@ -79,13 +81,13 @@ public class McpServerIntegrationTests : IAsyncLifetime
         Assert.NotNull(response);
         var jsonDoc = JsonDocument.Parse(response);
         var root = jsonDoc.RootElement;
-        
+
         Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
         Assert.Equal("2.0", jsonrpc.GetString());
-        
+
         Assert.True(root.TryGetProperty("id", out var id));
         Assert.Equal(requestId, id.GetString());
-        
+
         Assert.True(root.TryGetProperty("result", out var result));
         Assert.True(result.TryGetProperty("success", out var success));
         Assert.True(success.GetBoolean());
@@ -110,13 +112,13 @@ public class McpServerIntegrationTests : IAsyncLifetime
         Assert.NotNull(response);
         var jsonDoc = JsonDocument.Parse(response);
         var root = jsonDoc.RootElement;
-        
+
         Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
         Assert.Equal("2.0", jsonrpc.GetString());
-        
+
         Assert.True(root.TryGetProperty("id", out var id));
         Assert.Equal(requestId, id.GetString());
-        
+
         Assert.True(root.TryGetProperty("result", out var result));
         Assert.True(result.TryGetProperty("data", out var data));
         Assert.True(data.TryGetProperty("isDebugging", out _));
@@ -142,16 +144,16 @@ public class McpServerIntegrationTests : IAsyncLifetime
         Assert.NotNull(response);
         var jsonDoc = JsonDocument.Parse(response);
         var root = jsonDoc.RootElement;
-        
+
         Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
         Assert.Equal("2.0", jsonrpc.GetString());
-        
+
         Assert.True(root.TryGetProperty("id", out var id));
         Assert.Equal(requestId, id.GetString());
-        
+
         // Should return either result with data or error (since no debug session is active)
         Assert.True(root.TryGetProperty("result", out var result) || root.TryGetProperty("error", out _));
-        
+
         if (result.ValueKind != JsonValueKind.Undefined)
         {
             Assert.True(result.TryGetProperty("data", out var data));
@@ -183,13 +185,13 @@ public class McpServerIntegrationTests : IAsyncLifetime
         Assert.NotNull(response);
         var jsonDoc = JsonDocument.Parse(response);
         var root = jsonDoc.RootElement;
-        
+
         Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
         Assert.Equal("2.0", jsonrpc.GetString());
-        
+
         Assert.True(root.TryGetProperty("id", out var id));
         Assert.Equal(requestId, id.GetString());
-        
+
         // Should return error for invalid process
         Assert.True(root.TryGetProperty("error", out var error));
         Assert.True(error.TryGetProperty("message", out var message));
@@ -223,13 +225,13 @@ public class McpServerIntegrationTests : IAsyncLifetime
         Assert.NotNull(response);
         var jsonDoc = JsonDocument.Parse(response);
         var root = jsonDoc.RootElement;
-        
+
         Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
         Assert.Equal("2.0", jsonrpc.GetString());
-        
+
         Assert.True(root.TryGetProperty("id", out var id));
         Assert.Equal(requestId, id.GetString());
-        
+
         // Should return result with breakpoint info or error
         if (root.TryGetProperty("result", out var result))
         {
@@ -264,13 +266,13 @@ public class McpServerIntegrationTests : IAsyncLifetime
         Assert.NotNull(response);
         var jsonDoc = JsonDocument.Parse(response);
         var root = jsonDoc.RootElement;
-        
+
         Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
         Assert.Equal("2.0", jsonrpc.GetString());
-        
+
         Assert.True(root.TryGetProperty("id", out var id));
         Assert.Equal(requestId, id.GetString());
-        
+
         Assert.True(root.TryGetProperty("result", out var result));
         Assert.True(result.TryGetProperty("data", out var data));
         Assert.Equal(JsonValueKind.Array, data.ValueKind);
@@ -295,13 +297,13 @@ public class McpServerIntegrationTests : IAsyncLifetime
         Assert.NotNull(response);
         var jsonDoc = JsonDocument.Parse(response);
         var root = jsonDoc.RootElement;
-        
+
         Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
         Assert.Equal("2.0", jsonrpc.GetString());
-        
+
         Assert.True(root.TryGetProperty("id", out var id));
         Assert.Equal(requestId, id.GetString());
-        
+
         Assert.True(root.TryGetProperty("error", out var error));
         Assert.True(error.TryGetProperty("code", out var code));
         Assert.Equal(-32601, code.GetInt32()); // Method not found
@@ -330,19 +332,19 @@ public class McpServerIntegrationTests : IAsyncLifetime
 
         // Assert - All requests should receive proper JSON-RPC responses
         Assert.Equal(requests.Length, results.Length);
-        
+
         foreach (var result in results)
         {
             Assert.NotNull(result.Response);
             var jsonDoc = JsonDocument.Parse(result.Response);
             var root = jsonDoc.RootElement;
-            
+
             Assert.True(root.TryGetProperty("jsonrpc", out var jsonrpc));
             Assert.Equal("2.0", jsonrpc.GetString());
-            
+
             Assert.True(root.TryGetProperty("id", out var id));
             Assert.True(id.GetString()?.StartsWith("req"));
-            
+
             // Should have either result or error
             Assert.True(root.TryGetProperty("result", out _) || root.TryGetProperty("error", out _));
         }
@@ -355,29 +357,47 @@ public class McpServerIntegrationTests : IAsyncLifetime
             throw new InvalidOperationException("Server process is not running");
         }
 
-        // Send the request
-        await _serverProcess.StandardInput.WriteLineAsync(request);
-        await _serverProcess.StandardInput.FlushAsync();
-
-        // Read the response with timeout
-        var responseTask = _serverProcess.StandardOutput.ReadLineAsync();
-        var timeoutTask = Task.Delay(5000);
-
-        var completedTask = await Task.WhenAny(responseTask, timeoutTask);
-        
-        if (completedTask == timeoutTask)
+        // Send the request - serialize writes to avoid concurrent writers on the stream
+        await _stdinLock.WaitAsync();
+        try
         {
-            throw new TimeoutException("Request timed out");
+            await _serverProcess.StandardInput.WriteLineAsync(request);
+            await _serverProcess.StandardInput.FlushAsync();
+        }
+        finally
+        {
+            _stdinLock.Release();
         }
 
-        var response = await responseTask;
-        return response ?? throw new InvalidOperationException("Received null response");
+        // Read the response with timeout. Multiple concurrent callers must not call
+        // ReadLineAsync on the same StreamReader concurrently, so serialize reads
+        // using a semaphore.
+        await _stdoutLock.WaitAsync();
+        try
+        {
+            var responseTask = _serverProcess.StandardOutput.ReadLineAsync();
+            var timeoutTask = Task.Delay(5000);
+
+            var completedTask = await Task.WhenAny(responseTask, timeoutTask);
+
+            if (completedTask == timeoutTask)
+            {
+                throw new TimeoutException("Request timed out");
+            }
+
+            var response = await responseTask;
+            return response ?? throw new InvalidOperationException("Received null response");
+        }
+        finally
+        {
+            _stdoutLock.Release();
+        }
     }
 
     private async Task BuildServerAsync()
     {
         var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
-        
+
         var buildProcess = new Process
         {
             StartInfo = new ProcessStartInfo

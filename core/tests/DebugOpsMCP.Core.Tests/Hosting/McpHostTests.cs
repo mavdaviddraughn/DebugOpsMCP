@@ -16,7 +16,7 @@ public class McpHostTests
     {
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
-        
+
         // Register debug bridge and tools for testing
         services.AddSingleton<IDebugBridge, ExtensionMediatedDebugBridge>();
         services.AddSingleton<IDebugLifecycleTool, DebugLifecycleTool>();
@@ -25,7 +25,7 @@ public class McpHostTests
         services.AddSingleton<IDebugInspectionTool, DebugInspectionTool>();
         services.AddSingleton<IDebugThreadTool, DebugThreadTool>();
         services.AddSingleton<IDebugStatusTool, DebugStatusTool>();
-        
+
         _serviceProvider = services.BuildServiceProvider();
 
         _mcpHost = new McpHost(
@@ -47,6 +47,70 @@ public class McpHostTests
         Assert.NotNull(response);
         Assert.Contains("success", response);
         Assert.Contains("DebugOpsMCP server is running", response);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_HealthRequest_JsonRpcEnvelopeShape()
+    {
+        // Arrange - JSON-RPC 2.0 health request
+        var requestId = Guid.NewGuid().ToString();
+        var jsonRpcRequest = $"{{\"jsonrpc\":\"2.0\",\"id\":\"{requestId}\",\"method\":\"health\"}}";
+
+        // Act
+        var response = await _mcpHost.ProcessRequestAsync(jsonRpcRequest);
+
+        // Assert - response should be a JSON-RPC envelope with result.success and result.data
+        Assert.NotNull(response);
+        Assert.Contains("\"jsonrpc\":\"2.0\"", response);
+        Assert.Contains($"\"id\":\"{requestId}\"", response);
+        Assert.Contains("\"result\":", response);
+        Assert.Contains("\"success\":", response);
+        Assert.Contains("\"data\":", response);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_InvalidMethod_JsonRpcErrorShape()
+    {
+        // Arrange - JSON-RPC request for an unknown method
+        var requestId = Guid.NewGuid().ToString();
+        var jsonRpcRequest = $"{{\"jsonrpc\":\"2.0\",\"id\":\"{requestId}\",\"method\":\"nonexistent.method\"}}";
+
+        // Act
+        var response = await _mcpHost.ProcessRequestAsync(jsonRpcRequest);
+
+        // Assert - should be JSON-RPC error with numeric code and mcpCode preserved
+        Assert.NotNull(response);
+        var doc = System.Text.Json.JsonDocument.Parse(response);
+        var root = doc.RootElement;
+
+        Assert.True(root.TryGetProperty("error", out var error));
+        Assert.True(error.TryGetProperty("code", out var codeProp));
+        Assert.Equal(System.Text.Json.JsonValueKind.Number, codeProp.ValueKind);
+        // The MCP code should be preserved in error.data.mcpCode
+        Assert.True(error.TryGetProperty("data", out var data));
+        Assert.True(data.TryGetProperty("mcpCode", out var mcpCodeProp));
+        Assert.Equal(System.Text.Json.JsonValueKind.String, mcpCodeProp.ValueKind);
+        Assert.Equal("METHOD_NOT_FOUND", mcpCodeProp.GetString());
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_ListBreakpoints_ReturnsArrayShape()
+    {
+        // Arrange - JSON-RPC listBreakpoints request
+        var requestId = Guid.NewGuid().ToString();
+        var jsonRpcRequest = $"{{\"jsonrpc\":\"2.0\",\"id\":\"{requestId}\",\"method\":\"debug.listBreakpoints\"}}";
+
+        // Act
+        var response = await _mcpHost.ProcessRequestAsync(jsonRpcRequest);
+
+        // Assert - response.result.data should be an array (may be empty)
+        Assert.NotNull(response);
+        var doc = System.Text.Json.JsonDocument.Parse(response);
+        var root = doc.RootElement;
+
+        Assert.True(root.TryGetProperty("result", out var result));
+        Assert.True(result.TryGetProperty("data", out var data));
+        Assert.Equal(System.Text.Json.JsonValueKind.Array, data.ValueKind);
     }
 
     [Fact]

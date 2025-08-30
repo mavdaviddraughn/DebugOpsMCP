@@ -69,23 +69,39 @@ All messages follow JSON-RPC 2.0 specification:
     "success": true,
     "data": {
       // Response data
-    }
+    },
+    "message": null
   }
 }
 ```
 
 ### Error Format
 
+JSON-RPC errors produced by the MCP host map the MCP string error codes to
+numeric JSON-RPC codes when possible. The original MCP string code is preserved
+in `error.data.mcpCode` so clients can reason about MCP-specific error semantics.
+
+Example:
+
 ```json
 {
   "jsonrpc": "2.0",
   "id": "request-id",
   "error": {
-    "code": "ERROR_CODE",
-    "message": "Human-readable error message"
+    "code": -32601,
+    "message": "Unknown method: foo",
+    "data": {
+      "mcpCode": "METHOD_NOT_FOUND",
+      "details": null
+    }
   }
 }
 ```
+
+Note: For callers that do not use JSON-RPC (legacy or direct consumers of the
+host API), the server will continue to return the raw MCP JSON response object
+(for example `{ "success": true, "result": ... }`). JSON-RPC callers will
+receive the envelope shown above (with `result` containing `{ success, data, message }`).
 
 ## Debug Bridge Communication
 

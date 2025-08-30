@@ -34,20 +34,118 @@ public class McpHost
         try
         {
             _logger.LogDebug("Processing MCP request: {Request}", requestJson);
-
             var requestDoc = JsonDocument.Parse(requestJson);
-            var method = requestDoc.RootElement.GetProperty("method").GetString();
+            var root = requestDoc.RootElement;
+
+            // Extract method if present
+            string? method = null;
+            if (root.TryGetProperty("method", out var methodProp) && methodProp.ValueKind == JsonValueKind.String)
+            {
+                method = methodProp.GetString();
+            }
 
             if (string.IsNullOrEmpty(method))
             {
+                // Legacy behavior: return plain MCP error response for callers that expect it
                 return CreateErrorResponse("INVALID_REQUEST", "Missing or empty method property");
             }
 
             var response = await RouteRequestAsync(method, requestJson);
-            var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
 
-            _logger.LogDebug("MCP response: {Response}", responseJson);
-            return responseJson;
+            // If the incoming request is a JSON-RPC request, wrap the response in a JSON-RPC envelope
+            if (root.TryGetProperty("jsonrpc", out var jsonrpcProp) && jsonrpcProp.ValueKind == JsonValueKind.String && jsonrpcProp.GetString() == "2.0")
+            {
+                // Extract id if present (can be string or number)
+                object? idValue = null;
+                var hasId = false;
+                if (root.TryGetProperty("id", out var idProp))
+                {
+                    hasId = true;
+                    switch (idProp.ValueKind)
+                    {
+                        case JsonValueKind.String:
+                            idValue = idProp.GetString();
+                            break;
+                        case JsonValueKind.Number:
+                            if (idProp.TryGetInt64(out var longVal)) idValue = longVal;
+                            else if (idProp.TryGetDouble(out var dblVal)) idValue = dblVal;
+                            else idValue = idProp.GetRawText();
+                            break;
+                        case JsonValueKind.Null:
+                            idValue = null;
+                            break;
+                        default:
+                            idValue = idProp.GetRawText();
+                            break;
+                    }
+                }
+
+                // If it's an error response, map to JSON-RPC error
+                if (response is McpErrorResponse errResp)
+                {
+                    var jsonRpcCode = MapMcpErrorCodeToJsonRpcInt(errResp.Error?.Code);
+                    var envelope = new
+                    {
+                        jsonrpc = "2.0",
+                        id = hasId ? idValue : null,
+                        error = new
+                        {
+                            code = jsonRpcCode,
+                            message = errResp.Error?.Message ?? string.Empty,
+                            data = new
+                            {
+                                mcpCode = errResp.Error?.Code,
+                                details = errResp.Error?.Details
+                            }
+                        }
+                    };
+
+                    var envelopeJson = JsonSerializer.Serialize(envelope, _jsonOptions);
+                    _logger.LogDebug("MCP response: {Response}", envelopeJson);
+                    return envelopeJson;
+                }
+
+                // Otherwise return result envelope where `result` contains a standard
+                // shape used by clients: { success, data, message } where `data` is
+                // the inner payload (the typed Result property) if present.
+                object? dataValue = null;
+                string? message = null;
+                bool success = false;
+
+                success = response.Success;
+                message = response.Message;
+
+                // Try to extract a strongly-typed Result property via reflection so
+                // we return its raw value as `data` rather than the full wrapper.
+                var resultProp = response.GetType().GetProperty("Result");
+                if (resultProp != null)
+                {
+                    dataValue = resultProp.GetValue(response);
+                }
+
+                var resultEnvelope = new
+                {
+                    jsonrpc = "2.0",
+                    id = hasId ? idValue : null,
+                    result = new
+                    {
+                        success,
+                        data = dataValue,
+                        message
+                    }
+                };
+
+                var resultJson = JsonSerializer.Serialize(resultEnvelope, _jsonOptions);
+                _logger.LogDebug("MCP response: {Response}", resultJson);
+                return resultJson;
+            }
+
+            // Non-JSON-RPC callers expect raw MCP response JSON. Serialize using the
+            // runtime type so derived properties are preserved when the declared
+            // variable type is the base McpResponse.
+            var rawResponseJson = JsonSerializer.Serialize(response, response.GetType(), _jsonOptions);
+            _logger.LogDebug("MCP response: {Response}", rawResponseJson);
+            return rawResponseJson;
         }
         catch (JsonException ex)
         {
@@ -227,6 +325,23 @@ public class McpHost
             "debug.getStatus" =>
                 _serviceProvider.GetService<IDebugStatusTool>(),
             _ => null
+        };
+    }
+
+    private int MapMcpErrorCodeToJsonRpcInt(string? mcpCode)
+    {
+        // Map string error codes used by MCP to standard JSON-RPC numeric codes where reasonable
+        if (string.IsNullOrEmpty(mcpCode)) return -32000; // Server error
+
+        return mcpCode switch
+        {
+            "INVALID_REQUEST" => -32600,
+            "METHOD_NOT_FOUND" => -32601,
+            "JSON_PARSE_ERROR" => -32700,
+            "TOOL_NOT_FOUND" => -32001,
+            "TOOL_ERROR" => -32002,
+            "NOT_IMPLEMENTED" => -32003,
+            _ => -32000
         };
     }
 }

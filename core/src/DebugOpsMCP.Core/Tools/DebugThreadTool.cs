@@ -46,14 +46,14 @@ public class DebugThreadTool : IDebugThreadTool
 
             if (!_debugBridge.IsConnected)
             {
-                return new McpErrorResponse
+                return Task.FromResult<McpResponse>(new McpErrorResponse
                 {
                     Error = new McpError
                     {
                         Code = "NO_DEBUG_SESSION",
                         Message = "No active debug session. Use debug.attach() or debug.launch() first."
                     }
-                };
+                });
             }
 
             // TODO: Send actual DAP threads request
@@ -82,27 +82,27 @@ public class DebugThreadTool : IDebugThreadTool
 
             _logger.LogInformation("Threads retrieved: {ThreadCount} threads", mockThreads.Length);
 
-            return new DebugThreadsResponse
+            return Task.FromResult<McpResponse>(new DebugThreadsResponse
             {
                 Success = true,
                 Result = mockThreads
-            };
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get threads");
-            return new McpErrorResponse
+            return Task.FromResult<McpResponse>(new McpErrorResponse
             {
                 Error = new McpError
                 {
                     Code = "GET_THREADS_FAILED",
                     Message = ex.Message
                 }
-            };
+            });
         }
     }
 
-    private Task<McpResponse> HandleSelectThreadAsync(DebugSelectThreadRequest request)
+    private async Task<McpResponse> HandleSelectThreadAsync(DebugSelectThreadRequest request)
     {
         try
         {
@@ -125,11 +125,11 @@ public class DebugThreadTool : IDebugThreadTool
 
             _logger.LogInformation("Thread {ThreadId} selected successfully", request.ThreadId);
 
-            return Task.FromResult<McpResponse>(new McpResponse<string>
+            return new McpResponse<string>
             {
                 Success = true,
                 Result = $"Thread {request.ThreadId} selected"
-            });
+            };
         }
         catch (Exception ex)
         {
@@ -193,23 +193,23 @@ public class DebugStatusTool : IDebugStatusTool
                 SessionId = _debugBridge.IsConnected ? "session-123" : null
             };
 
-            return new DebugStatusResponse
+            return Task.FromResult<McpResponse>(new DebugStatusResponse
             {
                 Success = true,
                 Result = status
-            };
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get debug status");
-            return new McpErrorResponse
+            return Task.FromResult<McpResponse>(new McpErrorResponse
             {
                 Error = new McpError
                 {
                     Code = "GET_STATUS_FAILED",
                     Message = ex.Message
                 }
-            };
+            });
         }
     }
 }

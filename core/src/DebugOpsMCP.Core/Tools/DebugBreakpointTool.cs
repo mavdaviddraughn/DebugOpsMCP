@@ -26,21 +26,21 @@ public class DebugBreakpointTool : IDebugBreakpointTool
         _debugBridge = debugBridge ?? throw new ArgumentNullException(nameof(debugBridge));
     }
 
-    public async Task<McpResponse> HandleAsync(McpRequest request)
+    public Task<McpResponse> HandleAsync(McpRequest request)
     {
         return request.Method switch
         {
-            "debug.setBreakpoint" => await HandleSetBreakpointAsync((DebugSetBreakpointRequest)request),
-            "debug.removeBreakpoint" => await HandleRemoveBreakpointAsync((DebugRemoveBreakpointRequest)request),
-            "debug.listBreakpoints" => await HandleListBreakpointsAsync(),
-            _ => new McpErrorResponse
+            "debug.setBreakpoint" => HandleSetBreakpointAsync((DebugSetBreakpointRequest)request),
+            "debug.removeBreakpoint" => HandleRemoveBreakpointAsync((DebugRemoveBreakpointRequest)request),
+            "debug.listBreakpoints" => HandleListBreakpointsAsync(),
+            _ => Task.FromResult<McpResponse>(new McpErrorResponse
             {
                 Error = new McpError
                 {
                     Code = "METHOD_NOT_SUPPORTED",
                     Message = $"Method {request.Method} not supported by DebugBreakpointTool"
                 }
-            }
+            })
         };
     }
 
